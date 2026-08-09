@@ -20,7 +20,7 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 - 📝 **Guestbook** — Attendees can leave comments on event pages, delete their own, with organizer moderation
 - 📥 **CSV Import** — Bulk import guest lists from CSV files with validation and duplicate detection
 - 🔗 **Webhooks** — Real-time HTTP callbacks for RSVP and event lifecycle events with HMAC signing
-- 📊 **Email Tracking** — Delivery status, open tracking, bounce/complaint handling, and per-event email statistics
+- 📊 **Email Tracking** — Delivery status, open tracking, and per-event email statistics; provider bounce/complaint parsers remain dormant pending authenticated inbound webhook support
 - ✉️ **Unsubscribe & Suppression** — One-click unsubscribe footer on reminder/message emails, with a suppression list that skips opted-out addresses
 - 🗣️ **Guest Feedback** — A "Report a problem" widget on public RSVP pages lets guests flag issues without logging in
 - 🧭 **Secure Setup Wizard** — One-time, environment-token-authorized creation of the first administrator and instance settings
@@ -350,7 +350,11 @@ All API endpoints are under `/api/v1`. The server also provides:
 | GET | `/api/v1/notifications/event/:eventId/stats` | Email delivery stats (organizer) |
 | GET | `/api/v1/notifications/event/:eventId` | Delivery log (organizer) |
 
-Open tracking is gated by `EMAIL_OPEN_TRACKING_ENABLED`. The inbound delivery webhooks record bounces and complaints; provider signature verification is a tracked follow-up (see [Known limitations](#known-limitations)).
+Open tracking is gated by `EMAIL_OPEN_TRACKING_ENABLED`. SendGrid/SES inbound
+parser and support code remains in the repository, but its unsigned provider
+routes are not mounted or exposed. Bounce/complaint ingestion through those
+providers is unavailable until authenticated webhook support is implemented
+(see [Known limitations](#known-limitations)).
 
 ### ✉️ Unsubscribe
 
@@ -482,7 +486,13 @@ docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
 
 ### ⚠️ Known limitations
 
-**Inbound delivery webhooks are unauthenticated.** The SendGrid/SES delivery webhooks record bounces and complaints but do not yet verify provider signatures. Restrict access at the reverse proxy if you expose them. Signature verification is a tracked follow-up.
+**Unsigned inbound provider webhook routes are not mounted.** SendGrid/SES
+parser and support code may remain in the repository, but Owl Invites does not
+expose those handlers as HTTP routes. Bounce/complaint ingestion through these
+providers is unavailable until authenticated webhook support is implemented,
+including signature, timestamp, replay, and message-correlation verification.
+Operators must not wire or expose the dormant handlers manually; reverse-proxy
+restrictions are not a substitute for provider authentication.
 
 ### 🔑 Operator note: rotate pre-v1.5.1 Postgres credentials
 

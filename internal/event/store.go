@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/yannkr/openrsvp/internal/database"
 )
 
@@ -25,6 +27,25 @@ const eventColumns = `id, organizer_id, title, description, event_date, end_date
 
 // Create inserts a new event into the database.
 func (s *Store) Create(ctx context.Context, e *Event) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin create event: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := createEvent(ctx, tx, e); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit create event: %w", err)
+	}
+	return nil
+}
+
+type eventExecutor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func createEvent(ctx context.Context, exec eventExecutor, e *Event) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	eventDate := e.EventDate.UTC().Format(time.RFC3339)
 
@@ -40,7 +61,7 @@ func (s *Store) Create(ctx context.Context, e *Event) error {
 		rsvpDeadline = &v
 	}
 
-	_, err := s.db.ExecContext(ctx,
+	_, err := exec.ExecContext(ctx,
 		`INSERT INTO events (id, organizer_id, title, description, event_date, end_date, location, timezone, retention_days, status, share_token, contact_requirement, show_headcount, show_guest_list, rsvp_deadline, max_capacity, waitlist_enabled, comments_enabled, series_id, series_index, series_override, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.OrganizerID, e.Title, e.Description, eventDate, endDate,
@@ -50,6 +71,13 @@ func (s *Store) Create(ctx context.Context, e *Event) error {
 	)
 	if err != nil {
 		return fmt.Errorf("create event: %w", err)
+	}
+	_, err = exec.ExecContext(ctx, `INSERT INTO event_memberships (
+		id, event_id, user_id, role, granted_by_user_id, created_at, updated_at
+	) VALUES (?, ?, ?, 'owner', ?, ?, ?)`,
+		uuid.Must(uuid.NewV7()).String(), e.ID, e.OrganizerID, e.OrganizerID, now, now)
+	if err != nil {
+		return fmt.Errorf("create owner membership: %w", err)
 	}
 
 	// Update the timestamps on the struct to reflect what was stored.
@@ -80,7 +108,9 @@ func (s *Store) FindByShareToken(ctx context.Context, shareToken string) (*Event
 // archived events.
 func (s *Store) FindByOrganizerID(ctx context.Context, organizerID string) ([]*Event, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+eventColumns+` FROM events WHERE organizer_id = ? AND status != 'archived' ORDER BY event_date DESC`, organizerID,
+		`SELECT `+eventColumns+` FROM events
+		 WHERE id IN (SELECT event_id FROM event_memberships WHERE user_id = ?)
+		 AND status != 'archived' ORDER BY event_date DESC`, organizerID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find events by organizer: %w", err)
@@ -100,6 +130,22 @@ func (s *Store) FindByOrganizerID(ctx context.Context, organizerID string) ([]*E
 	}
 
 	return events, nil
+}
+
+// FindMembershipRole returns the explicit event role for a user. No instance
+// role is consulted here, so administrators receive no implicit event access.
+func (s *Store) FindMembershipRole(ctx context.Context, eventID, userID string) (string, error) {
+	var role string
+	err := s.db.QueryRowContext(ctx, `SELECT m.role FROM event_memberships m
+		JOIN users u ON u.id = m.user_id
+		WHERE m.event_id = ? AND m.user_id = ? AND u.status = 'active'`, eventID, userID).Scan(&role)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find event membership role: %w", err)
+	}
+	return role, nil
 }
 
 // FindByIDs retrieves events matching the given IDs, excluding archived

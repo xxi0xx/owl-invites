@@ -452,7 +452,9 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 	}
 
 	doc.Events, err = queryRowsByOrganizer(ctx, s.db,
-		"SELECT * FROM events WHERE organizer_id = ? ORDER BY created_at", organizerID)
+		`SELECT * FROM events WHERE id IN (
+			SELECT event_id FROM event_memberships WHERE user_id = ? AND role = 'owner'
+		) ORDER BY created_at`, organizerID)
 	if err != nil {
 		return nil, fmt.Errorf("export events: %w", err)
 	}
@@ -501,9 +503,9 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 	defer func() { _ = tx.Rollback() }()
 
 	// Grandchildren / records reachable only through an event the organizer
-	// owns. Scoped via a subselect on events.organizer_id so no other
+	// owns. Scoped via explicit owner membership so no other
 	// organizer's data is ever touched.
-	ev := "(SELECT id FROM events WHERE organizer_id = ?)"
+	ev := "(SELECT event_id FROM event_memberships WHERE user_id = ? AND role = 'owner')"
 
 	stmts := []struct {
 		query string
@@ -529,13 +531,14 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		{"DELETE FROM invite_cards WHERE event_id IN " + ev, []any{organizerID}},
 		// attendees -> events
 		{"DELETE FROM attendees WHERE event_id IN " + ev, []any{organizerID}},
-		// cohost rows on the organizer's own events
-		{"DELETE FROM event_cohosts WHERE event_id IN " + ev, []any{organizerID}},
-		// cohost rows where this organizer is a cohost or the inviter on
-		// someone else's event.
-		{"DELETE FROM event_cohosts WHERE organizer_id = ? OR added_by = ?", []any{organizerID, organizerID}},
 		// events themselves
-		{"DELETE FROM events WHERE organizer_id = ?", []any{organizerID}},
+		{"DELETE FROM events WHERE id IN " + ev, []any{organizerID}},
+		// Preserve memberships granted by this user on events that remain by
+		// attributing them to each event's current owner.
+		{`UPDATE event_memberships SET granted_by_user_id = (
+			SELECT owner.user_id FROM event_memberships owner
+			WHERE owner.event_id = event_memberships.event_id AND owner.role = 'owner'
+		) WHERE granted_by_user_id = ? AND user_id != ?`, []any{organizerID, organizerID}},
 		// event series owned by the organizer (events.series_id is ON DELETE
 		// SET NULL, and the events are already gone above).
 		{"DELETE FROM event_series WHERE organizer_id = ?", []any{organizerID}},
@@ -543,7 +546,6 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		{"DELETE FROM magic_links WHERE organizer_id = ?", []any{organizerID}},
 		{"DELETE FROM sessions WHERE organizer_id = ?", []any{organizerID}},
 		{"DELETE FROM account_invites WHERE target_user_id = ? OR invited_by_user_id = ?", []any{organizerID, organizerID}},
-		{"DELETE FROM admin_audit_log WHERE actor_user_id = ? OR target_user_id = ?", []any{organizerID, organizerID}},
 		{"UPDATE users SET invited_by_user_id = NULL WHERE invited_by_user_id = ?", []any{organizerID}},
 		// finally the organizer row itself
 		{"DELETE FROM organizers WHERE id = ?", []any{organizerID}},
@@ -566,7 +568,7 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 // organizerEventIDs returns the IDs of every event owned by the organizer.
 func (s *Store) organizerEventIDs(ctx context.Context, organizerID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT id FROM events WHERE organizer_id = ?", organizerID)
+		"SELECT event_id FROM event_memberships WHERE user_id = ? AND role = 'owner'", organizerID)
 	if err != nil {
 		return nil, err
 	}

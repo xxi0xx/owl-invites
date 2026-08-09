@@ -22,11 +22,19 @@ func NewCoHostStore(db database.DB) *CoHostStore {
 // Create inserts a new co-host record into the database.
 func (s *CoHostStore) Create(ctx context.Context, ch *CoHost) error {
 	now := time.Now().UTC().Format(time.RFC3339)
+	userID := ch.UserID
+	if userID == "" {
+		userID = ch.OrganizerID
+	}
+	grantedBy := ch.GrantedByUserID
+	if grantedBy == "" {
+		grantedBy = ch.AddedBy
+	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO event_cohosts (id, event_id, organizer_id, role, added_by, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		ch.ID, ch.EventID, ch.OrganizerID, ch.Role, ch.AddedBy, now,
+		`INSERT INTO event_memberships (id, event_id, user_id, role, granted_by_user_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		ch.ID, ch.EventID, userID, ch.Role, grantedBy, now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("create co-host: %w", err)
@@ -34,6 +42,8 @@ func (s *CoHostStore) Create(ctx context.Context, ch *CoHost) error {
 
 	created, _ := time.Parse(time.RFC3339, now)
 	ch.CreatedAt = created
+	ch.UserID, ch.OrganizerID = userID, userID
+	ch.GrantedByUserID, ch.AddedBy = grantedBy, grantedBy
 
 	return nil
 }
@@ -42,11 +52,11 @@ func (s *CoHostStore) Create(ctx context.Context, ch *CoHost) error {
 // organizers table to include email and name.
 func (s *CoHostStore) FindByEventID(ctx context.Context, eventID string) ([]*CoHost, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT c.id, c.event_id, c.organizer_id, c.role, c.added_by, c.created_at,
-		        o.email, o.name
-		 FROM event_cohosts c
-		 JOIN organizers o ON o.id = c.organizer_id
-		 WHERE c.event_id = ?
+		`SELECT c.id, c.event_id, c.user_id, c.role, c.granted_by_user_id, c.created_at,
+		        u.email, u.display_name
+		 FROM event_memberships c
+		 JOIN users u ON u.id = c.user_id
+		 WHERE c.event_id = ? AND c.role = 'cohost'
 		 ORDER BY c.created_at ASC`, eventID,
 	)
 	if err != nil {
@@ -72,15 +82,15 @@ func (s *CoHostStore) FindByEventID(ctx context.Context, eventID string) ([]*CoH
 // FindByEventAndOrganizer checks if a specific co-host relationship exists.
 func (s *CoHostStore) FindByEventAndOrganizer(ctx context.Context, eventID, organizerID string) (*CoHost, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, event_id, organizer_id, role, added_by, created_at
-		 FROM event_cohosts
-		 WHERE event_id = ? AND organizer_id = ?`, eventID, organizerID,
+		`SELECT id, event_id, user_id, role, granted_by_user_id, created_at
+		 FROM event_memberships
+		 WHERE event_id = ? AND user_id = ? AND role = 'cohost'`, eventID, organizerID,
 	)
 
 	var ch CoHost
 	var createdAt string
 
-	err := row.Scan(&ch.ID, &ch.EventID, &ch.OrganizerID, &ch.Role, &ch.AddedBy, &createdAt)
+	err := row.Scan(&ch.ID, &ch.EventID, &ch.UserID, &ch.Role, &ch.GrantedByUserID, &createdAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -92,6 +102,8 @@ func (s *CoHostStore) FindByEventAndOrganizer(ctx context.Context, eventID, orga
 	if err != nil {
 		return nil, fmt.Errorf("parse created_at: %w", err)
 	}
+	ch.OrganizerID, ch.AddedBy = ch.UserID, ch.GrantedByUserID
+	ch.Email, ch.Name = ch.OrganizerEmail, ch.OrganizerName
 
 	return &ch, nil
 }
@@ -99,15 +111,15 @@ func (s *CoHostStore) FindByEventAndOrganizer(ctx context.Context, eventID, orga
 // FindByID retrieves a co-host record by its ID.
 func (s *CoHostStore) FindByID(ctx context.Context, id string) (*CoHost, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, event_id, organizer_id, role, added_by, created_at
-		 FROM event_cohosts
-		 WHERE id = ?`, id,
+		`SELECT id, event_id, user_id, role, granted_by_user_id, created_at
+		 FROM event_memberships
+		 WHERE id = ? AND role = 'cohost'`, id,
 	)
 
 	var ch CoHost
 	var createdAt string
 
-	err := row.Scan(&ch.ID, &ch.EventID, &ch.OrganizerID, &ch.Role, &ch.AddedBy, &createdAt)
+	err := row.Scan(&ch.ID, &ch.EventID, &ch.UserID, &ch.Role, &ch.GrantedByUserID, &createdAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -119,6 +131,8 @@ func (s *CoHostStore) FindByID(ctx context.Context, id string) (*CoHost, error) 
 	if err != nil {
 		return nil, fmt.Errorf("parse created_at: %w", err)
 	}
+	ch.OrganizerID, ch.AddedBy = ch.UserID, ch.GrantedByUserID
+	ch.Email, ch.Name = ch.OrganizerEmail, ch.OrganizerName
 
 	return &ch, nil
 }
@@ -127,7 +141,7 @@ func (s *CoHostStore) FindByID(ctx context.Context, id string) (*CoHost, error) 
 // co-host.
 func (s *CoHostStore) FindCohostedEventIDs(ctx context.Context, organizerID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT event_id FROM event_cohosts WHERE organizer_id = ?`, organizerID,
+		`SELECT event_id FROM event_memberships WHERE user_id = ? AND role = 'cohost'`, organizerID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find co-hosted event IDs: %w", err)
@@ -151,7 +165,7 @@ func (s *CoHostStore) FindCohostedEventIDs(ctx context.Context, organizerID stri
 
 // Delete removes a co-host record by its ID.
 func (s *CoHostStore) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM event_cohosts WHERE id = ?", id)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM event_memberships WHERE id = ? AND role = 'cohost'", id)
 	if err != nil {
 		return fmt.Errorf("delete co-host: %w", err)
 	}
@@ -162,7 +176,7 @@ func (s *CoHostStore) Delete(ctx context.Context, id string) error {
 func (s *CoHostStore) CountByEventID(ctx context.Context, eventID string) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM event_cohosts WHERE event_id = ?", eventID,
+		"SELECT COUNT(*) FROM event_memberships WHERE event_id = ? AND role = 'cohost'", eventID,
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count co-hosts: %w", err)
@@ -176,7 +190,7 @@ func scanCoHostRow(rows *sql.Rows) (*CoHost, error) {
 	var createdAt string
 
 	err := rows.Scan(
-		&ch.ID, &ch.EventID, &ch.OrganizerID, &ch.Role, &ch.AddedBy, &createdAt,
+		&ch.ID, &ch.EventID, &ch.UserID, &ch.Role, &ch.GrantedByUserID, &createdAt,
 		&ch.OrganizerEmail, &ch.OrganizerName,
 	)
 	if err != nil {
@@ -187,6 +201,8 @@ func scanCoHostRow(rows *sql.Rows) (*CoHost, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse created_at: %w", err)
 	}
+	ch.OrganizerID, ch.AddedBy = ch.UserID, ch.GrantedByUserID
+	ch.Email, ch.Name = ch.OrganizerEmail, ch.OrganizerName
 
 	return &ch, nil
 }

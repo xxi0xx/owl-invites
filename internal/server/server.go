@@ -18,6 +18,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/event"
+	"github.com/yannkr/openrsvp/internal/eventadmin"
 	"github.com/yannkr/openrsvp/internal/feedback"
 	"github.com/yannkr/openrsvp/internal/instanceconfig"
 	"github.com/yannkr/openrsvp/internal/invite"
@@ -57,6 +58,7 @@ type Server struct {
 	suppressionHandler    *suppression.Handler
 	instanceConfigHandler *instanceconfig.Handler
 	userAdminHandler      *useradmin.Handler
+	eventAdminHandler     *eventadmin.Handler
 	scheduler             *scheduler.Scheduler
 	securityMw            *security.Middleware
 	uploadsDir            string
@@ -133,6 +135,9 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			return "", "", err
 		}
 		if org == nil {
+			return "", "", nil
+		}
+		if org.Status != auth.UserStatusActive {
 			return "", "", nil
 		}
 		return org.ID, org.Name, nil
@@ -934,6 +939,13 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		})
 	}
 	userAdminHandler := useradmin.NewHandler(userAdminService, cfg, authMiddleware, adminMiddleware, logger)
+	eventHandler.SetCoHostSponsor(func(ctx context.Context, ownerUserID, eventID, email string) (bool, error) {
+		owner, err := authStore.FindOrganizerByID(ctx, ownerUserID)
+		if err != nil || owner == nil {
+			return false, err
+		}
+		return userAdminService.InviteEventCohost(ctx, owner, eventID, email)
+	})
 
 	// Wire up instance setup/config layer. DB-backed non-secret overrides
 	// (instance name, default timezone, signups, support email) are overlaid
@@ -945,6 +957,8 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		cfg.ApplyInstanceOverrides(overrides)
 	}
 	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, bootstrapService, cfg, authMiddleware, adminMiddleware, logger)
+	eventAdminService := eventadmin.NewService(db, authStore, instanceConfigStore)
+	eventAdminHandler := eventadmin.NewHandler(eventAdminService, authMiddleware, adminMiddleware)
 
 	s := &Server{
 		cfg:                   cfg,
@@ -967,6 +981,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		suppressionHandler:    suppressionHandler,
 		instanceConfigHandler: instanceConfigHandler,
 		userAdminHandler:      userAdminHandler,
+		eventAdminHandler:     eventAdminHandler,
 		scheduler:             sched,
 		securityMw:            secMw,
 		uploadsDir:            uploadsDir,

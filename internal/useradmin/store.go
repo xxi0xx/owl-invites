@@ -43,22 +43,74 @@ func (s *Store) ListUsers(ctx context.Context) ([]*auth.User, error) {
 	return users, rows.Err()
 }
 
-func (s *Store) CreateInviteTx(ctx context.Context, tx database.Tx, target *auth.User, actorID, tokenHash string, expiresAt, now time.Time) (*AccountInvite, error) {
+func (s *Store) CreateInviteTx(ctx context.Context, tx database.Tx, target *auth.User, actorID, tokenHash string, eventID, eventRole *string, expiresAt, now time.Time) (*AccountInvite, error) {
 	invite := &AccountInvite{
 		ID: uuid.Must(uuid.NewV7()).String(), TargetUserID: target.ID,
 		Email: target.NormalizedEmail, InvitedByUserID: actorID,
-		ExpiresAt: expiresAt.UTC(), CreatedAt: now.UTC(),
+		EventID: eventID, EventRole: eventRole, ExpiresAt: expiresAt.UTC(), CreatedAt: now.UTC(),
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO account_invites (
 		id, target_user_id, normalized_email, token_hash, invited_by_user_id,
-		expires_at, created_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?)`, invite.ID, invite.TargetUserID, invite.Email,
-		tokenHash, invite.InvitedByUserID, invite.ExpiresAt.Format(time.RFC3339),
+		event_id, event_role, expires_at, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, invite.ID, invite.TargetUserID, invite.Email,
+		tokenHash, invite.InvitedByUserID, eventID, eventRole, invite.ExpiresAt.Format(time.RFC3339),
 		invite.CreatedAt.Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("create account invite: %w", err)
 	}
 	return invite, nil
+}
+
+func (s *Store) LockEventTx(ctx context.Context, tx database.Tx, eventID string) error {
+	result, err := tx.ExecContext(ctx, "UPDATE events SET updated_at = updated_at WHERE id = ?", eventID)
+	if err != nil {
+		return fmt.Errorf("lock event: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+func (s *Store) IsEventOwnerTx(ctx context.Context, tx database.Tx, eventID, userID string) (bool, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_memberships
+		WHERE event_id = ? AND user_id = ? AND role = 'owner'`, eventID, userID).Scan(&count); err != nil {
+		return false, fmt.Errorf("check event owner: %w", err)
+	}
+	return count == 1, nil
+}
+
+func (s *Store) CountCohostCommitmentsTx(ctx context.Context, tx database.Tx, eventID string, now time.Time) (int, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM event_memberships WHERE event_id = ? AND role = 'cohost') +
+		(SELECT COUNT(*) FROM account_invites WHERE event_id = ? AND event_role = 'cohost'
+		 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?)`,
+		eventID, eventID, now.UTC().Format(time.RFC3339)).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count cohost commitments: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Store) CreateCohostMembershipTx(ctx context.Context, tx database.Tx, eventID, userID, grantedBy string, now time.Time) error {
+	nowText := now.UTC().Format(time.RFC3339)
+	_, err := tx.ExecContext(ctx, `INSERT INTO event_memberships (
+		id, event_id, user_id, role, granted_by_user_id, created_at, updated_at
+	) VALUES (?, ?, ?, 'cohost', ?, ?, ?)`, uuid.Must(uuid.NewV7()).String(), eventID, userID, grantedBy, nowText, nowText)
+	if err != nil {
+		return fmt.Errorf("create cohost membership: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) HasEventMembershipTx(ctx context.Context, tx database.Tx, eventID, userID string) (bool, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM event_memberships WHERE event_id = ? AND user_id = ?", eventID, userID).Scan(&count); err != nil {
+		return false, fmt.Errorf("check event membership: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (s *Store) RevokePendingInvitesTx(ctx context.Context, tx database.Tx, targetUserID string, now time.Time) error {

@@ -26,6 +26,7 @@ var (
 	ErrLastAdmin         = errors.New("the last active administrator cannot be changed")
 	ErrInvalidTransition = errors.New("invalid user status transition")
 	ErrEmailUnavailable  = errors.New("account invitation email is unavailable")
+	ErrCohostLimit       = errors.New("event cohost limit reached")
 )
 
 type EmailSender func(ctx context.Context, to, subject, htmlBody, plainBody string) error
@@ -101,7 +102,7 @@ func (s *Service) InviteUser(ctx context.Context, actor *auth.User, email string
 	if err != nil {
 		return nil, fmt.Errorf("generate account invite: %w", err)
 	}
-	invite, err := s.store.CreateInviteTx(ctx, tx, target, actor.ID, tokenHash,
+	invite, err := s.store.CreateInviteTx(ctx, tx, target, actor.ID, tokenHash, nil, nil,
 		now.Add(s.cfg.AccountInviteExpiry), now)
 	if err != nil {
 		return nil, err
@@ -119,6 +120,111 @@ func (s *Service) InviteUser(ctx context.Context, actor *auth.User, email string
 		return nil, fmt.Errorf("deliver account invite: %w", err)
 	}
 	return &IssuedInvite{AccountInvite: invite, RawToken: rawToken, TokenHash: tokenHash}, nil
+}
+
+// InviteEventCohost lets an explicit event owner sponsor an account even when
+// public signups are disabled. Existing active users receive a membership;
+// new/invited users receive an account capability that grants membership only
+// when it is accepted.
+func (s *Service) InviteEventCohost(ctx context.Context, actor *auth.User, eventID, email string) (accountInvitePending bool, err error) {
+	if actor == nil || actor.Status != auth.UserStatusActive || s.sendEmail == nil {
+		return false, ErrUserNotFound
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email || len(email) > 320 {
+		return false, auth.ErrInvalidEmail
+	}
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.store.LockEventTx(ctx, tx, eventID); err != nil {
+		return false, err
+	}
+	persistedActor, err := s.authStore.FindOrganizerByIDTx(ctx, tx, actor.ID)
+	if err != nil {
+		return false, err
+	}
+	if persistedActor == nil || persistedActor.Status != auth.UserStatusActive {
+		return false, ErrUserNotFound
+	}
+	isOwner, err := s.store.IsEventOwnerTx(ctx, tx, eventID, persistedActor.ID)
+	if err != nil {
+		return false, err
+	}
+	if !isOwner {
+		return false, ErrUserNotFound
+	}
+
+	target, err := s.authStore.FindUserByEmailTx(ctx, tx, email)
+	if err != nil {
+		return false, err
+	}
+	if target != nil && target.Status == auth.UserStatusInvited {
+		if err := s.store.RevokePendingInvitesTx(ctx, tx, target.ID, time.Now().UTC()); err != nil {
+			return false, err
+		}
+	}
+	now := time.Now().UTC()
+	commitments, err := s.store.CountCohostCommitmentsTx(ctx, tx, eventID, now)
+	if err != nil {
+		return false, err
+	}
+	if commitments >= s.cfg.MaxCoHostsPerEvent {
+		return false, ErrCohostLimit
+	}
+
+	if target == nil {
+		target, err = s.authStore.CreateUserTx(ctx, tx, email, "", s.cfg.DefaultTimezone,
+			auth.InstanceRoleUser, auth.UserStatusInvited, &persistedActor.ID)
+		if err != nil {
+			return false, err
+		}
+	}
+	if target.Status == auth.UserStatusActive {
+		hasMembership, err := s.store.HasEventMembershipTx(ctx, tx, eventID, target.ID)
+		if err != nil {
+			return false, err
+		}
+		if hasMembership {
+			return false, ErrUserExists
+		}
+		if err := s.store.CreateCohostMembershipTx(ctx, tx, eventID, target.ID, persistedActor.ID, now); err != nil {
+			return false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit cohost membership: %w", err)
+		}
+		htmlBody := `<p>You have been added as a cohost on Owl Invites.</p>`
+		plainBody := "You have been added as a cohost on Owl Invites. Sign in to view the event."
+		if err := s.sendEmail(ctx, target.Email, "You've been added as an Owl Invites cohost", htmlBody, plainBody); err != nil {
+			return false, fmt.Errorf("deliver cohost notification: %w", err)
+		}
+		return false, nil
+	}
+	if target.Status != auth.UserStatusInvited {
+		return false, ErrUserExists
+	}
+	rawToken, tokenHash, err := generateToken()
+	if err != nil {
+		return false, err
+	}
+	role := "cohost"
+	invite, err := s.store.CreateInviteTx(ctx, tx, target, persistedActor.ID, tokenHash, &eventID, &role,
+		now.Add(s.cfg.AccountInviteExpiry), now)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit sponsored cohost invite: %w", err)
+	}
+	htmlBody, plainBody := s.renderInviteEmail(rawToken, invite.ExpiresAt)
+	if err := s.sendEmail(ctx, invite.Email, "You're invited to cohost on Owl Invites", htmlBody, plainBody); err != nil {
+		return false, fmt.Errorf("deliver sponsored cohost invite: %w", err)
+	}
+	return true, nil
 }
 
 func (s *Service) AcceptInvite(ctx context.Context, rawToken string) (*auth.AuthResponse, error) {
@@ -146,6 +252,14 @@ func (s *Service) AcceptInvite(ctx context.Context, rawToken string) (*auth.Auth
 	user, err := s.authStore.ActivateInvitedUserTx(ctx, tx, invite.TargetUserID, now)
 	if err != nil {
 		return nil, ErrInvalidInvite
+	}
+	if invite.EventID != nil && invite.EventRole != nil && *invite.EventRole == "cohost" {
+		if err := s.store.LockEventTx(ctx, tx, *invite.EventID); err != nil {
+			return nil, ErrInvalidInvite
+		}
+		if err := s.store.CreateCohostMembershipTx(ctx, tx, *invite.EventID, user.ID, invite.InvitedByUserID, now); err != nil {
+			return nil, ErrInvalidInvite
+		}
 	}
 
 	sessionToken, sessionHash, err := generateToken()

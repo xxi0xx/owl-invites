@@ -86,10 +86,10 @@ CREATE INDEX idx_account_invites_event ON account_invites(event_id);
 
 CREATE TABLE admin_audit_log (
     id                   TEXT PRIMARY KEY,
-    actor_user_id        TEXT REFERENCES users(id),
+    actor_user_id        TEXT REFERENCES users(id) ON DELETE SET NULL,
     actor_kind           TEXT NOT NULL DEFAULT 'user' CHECK(actor_kind IN ('user','cli','system')),
     action               TEXT NOT NULL,
-    target_user_id       TEXT REFERENCES users(id),
+    target_user_id       TEXT REFERENCES users(id) ON DELETE SET NULL,
     event_id             TEXT REFERENCES events(id) ON DELETE SET NULL,
     metadata_json        TEXT NOT NULL DEFAULT '{}',
     created_at           TEXT NOT NULL

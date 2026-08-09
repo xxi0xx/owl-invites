@@ -116,6 +116,11 @@ func TestGetInstanceStats_FeatureAdoption(t *testing.T) {
 		"org-1", "admin@test.com", "Admin", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z",
 	)
 	require.NoError(t, err)
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO users (id, email, normalized_email, display_name, timezone, instance_role, status, activated_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, 'UTC', 'user', 'active', ?, ?, ?)`,
+		"org-1", "admin@test.com", "admin@test.com", "Admin", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z")
+	require.NoError(t, err)
 
 	// Event with waitlist enabled.
 	_, err = db.ExecContext(ctx,
@@ -135,7 +140,7 @@ func TestGetInstanceStats_FeatureAdoption(t *testing.T) {
 
 	// Add a co-host.
 	_, err = db.ExecContext(ctx,
-		"INSERT INTO event_cohosts (id, event_id, organizer_id, role, added_by, created_at) VALUES (?, ?, ?, 'cohost', ?, '2025-01-01T00:00:00Z')",
+		"INSERT INTO event_memberships (id, event_id, user_id, role, granted_by_user_id, created_at, updated_at) VALUES (?, ?, ?, 'cohost', ?, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')",
 		"ch-1", "ev-1", "org-1", "org-1",
 	)
 	require.NoError(t, err)

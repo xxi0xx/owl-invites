@@ -2,16 +2,22 @@ package event
 
 import "time"
 
-// CoHost represents a co-host relationship between an organizer and an event.
+// CoHost is the co-host view of a canonical event membership. OrganizerID and
+// AddedBy remain internal compatibility fields while callers migrate to user
+// terminology.
 type CoHost struct {
-	ID             string    `json:"id"`
-	EventID        string    `json:"eventId"`
-	OrganizerID    string    `json:"organizerId"`
-	Role           string    `json:"role"`
-	AddedBy        string    `json:"addedBy"`
-	CreatedAt      time.Time `json:"createdAt"`
-	OrganizerEmail string    `json:"organizerEmail,omitempty"`
-	OrganizerName  string    `json:"organizerName,omitempty"`
+	ID              string    `json:"id"`
+	EventID         string    `json:"eventId"`
+	UserID          string    `json:"userId"`
+	OrganizerID     string    `json:"-"`
+	Role            string    `json:"role"`
+	GrantedByUserID string    `json:"grantedByUserId"`
+	AddedBy         string    `json:"-"`
+	CreatedAt       time.Time `json:"createdAt"`
+	Email           string    `json:"email,omitempty"`
+	Name            string    `json:"name,omitempty"`
+	OrganizerEmail  string    `json:"organizerEmail,omitempty"`
+	OrganizerName   string    `json:"organizerName,omitempty"`
 }
 
 // AddCoHostRequest is the request body for adding a co-host to an event.

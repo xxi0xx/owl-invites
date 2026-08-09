@@ -3,6 +3,7 @@ package useradmin
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yannkr/openrsvp/internal/auth"
+	"github.com/yannkr/openrsvp/internal/event"
 	"github.com/yannkr/openrsvp/internal/testutil"
 )
 
@@ -111,6 +113,78 @@ func TestRevokedAccountInviteCannotBeAccepted(t *testing.T) {
 	pending, err := fx.service.ListPendingInvites(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, pending)
+}
+
+func TestOwnerCanSponsorCohostAccountWhenPublicSignupsAreOff(t *testing.T) {
+	fx := setupAdminService(t)
+	events := event.NewService(event.NewStore(fx.service.store.db), 30)
+	ev, err := events.Create(context.Background(), fx.admin.ID, event.CreateEventRequest{
+		Title: "Sponsored", EventDate: time.Now().UTC().Add(time.Hour).Format(time.RFC3339), Timezone: "UTC",
+	})
+	require.NoError(t, err)
+
+	pending, err := fx.service.InviteEventCohost(context.Background(), fx.admin, ev.ID, "new-cohost@example.com")
+	require.NoError(t, err)
+	assert.True(t, pending)
+	invited, err := fx.authStore.FindOrganizerByEmail(context.Background(), "new-cohost@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, auth.UserStatusInvited, invited.Status)
+
+	match := regexp.MustCompile(`#token=([0-9a-f]{64})`).FindStringSubmatch(fx.sentBody)
+	require.Len(t, match, 2)
+	raw := match[1]
+	response, err := fx.service.AcceptInvite(context.Background(), raw)
+	require.NoError(t, err)
+	canManage, err := events.CanManageEvent(context.Background(), ev.ID, response.Organizer.ID)
+	require.NoError(t, err)
+	assert.True(t, canManage)
+}
+
+func TestOwnerAddsExistingActiveCohostWithoutAccountInvite(t *testing.T) {
+	fx := setupAdminService(t)
+	events := event.NewService(event.NewStore(fx.service.store.db), 30)
+	ev, err := events.Create(context.Background(), fx.admin.ID, event.CreateEventRequest{
+		Title: "Existing", EventDate: time.Now().UTC().Add(time.Hour).Format(time.RFC3339), Timezone: "UTC",
+	})
+	require.NoError(t, err)
+	cohost, err := fx.authStore.CreateOrganizer(context.Background(), "existing-cohost@example.com")
+	require.NoError(t, err)
+
+	pending, err := fx.service.InviteEventCohost(context.Background(), fx.admin, ev.ID, cohost.Email)
+	require.NoError(t, err)
+	assert.False(t, pending)
+	canManage, err := events.CanManageEvent(context.Background(), ev.ID, cohost.ID)
+	require.NoError(t, err)
+	assert.True(t, canManage)
+}
+
+func TestInstanceAdminCannotSponsorCohostWithoutOwnerMembership(t *testing.T) {
+	fx := setupAdminService(t)
+	owner, err := fx.authStore.CreateOrganizer(context.Background(), "different-owner@example.com")
+	require.NoError(t, err)
+	events := event.NewService(event.NewStore(fx.service.store.db), 30)
+	ev, err := events.Create(context.Background(), owner.ID, event.CreateEventRequest{
+		Title: "No implicit admin", EventDate: time.Now().UTC().Add(time.Hour).Format(time.RFC3339), Timezone: "UTC",
+	})
+	require.NoError(t, err)
+
+	_, err = fx.service.InviteEventCohost(context.Background(), fx.admin, ev.ID, "blocked@example.com")
+	assert.ErrorIs(t, err, ErrUserNotFound)
+}
+
+func TestPendingSponsoredInvitesReserveCohostCapacity(t *testing.T) {
+	fx := setupAdminService(t)
+	fx.service.cfg.MaxCoHostsPerEvent = 1
+	events := event.NewService(event.NewStore(fx.service.store.db), 30)
+	ev, err := events.Create(context.Background(), fx.admin.ID, event.CreateEventRequest{
+		Title: "Capacity", EventDate: time.Now().UTC().Add(time.Hour).Format(time.RFC3339), Timezone: "UTC",
+	})
+	require.NoError(t, err)
+
+	_, err = fx.service.InviteEventCohost(context.Background(), fx.admin, ev.ID, "reserved@example.com")
+	require.NoError(t, err)
+	_, err = fx.service.InviteEventCohost(context.Background(), fx.admin, ev.ID, "over-limit@example.com")
+	assert.ErrorIs(t, err, ErrCohostLimit)
 }
 
 func TestAdminCannotDisableOrDemoteLastActiveAdmin(t *testing.T) {

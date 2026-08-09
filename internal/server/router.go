@@ -123,6 +123,7 @@ func (s *Server) routes() *chi.Mux {
 		api.Mount("/notifications", s.notifHandler.Routes())
 		api.Mount("/admin/users", s.userAdminHandler.UserRoutes())
 		api.Mount("/admin/audit", s.userAdminHandler.AuditRoutes())
+		api.Mount("/admin/events", s.eventAdminHandler.Routes())
 		api.Mount("/admin", s.statsHandler.Routes())
 		// Public, token-based email unsubscribe (no auth, CSRF-exempt).
 		api.Mount("/unsubscribe", s.suppressionHandler.Routes())

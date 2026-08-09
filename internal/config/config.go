@@ -71,8 +71,8 @@ type Config struct {
 	EmailOpenTrackingEnabled  bool
 	EmailClickTrackingEnabled bool
 
-	// Admin
-	AdminEmails []string
+	// One-time first-run authorization (environment-only).
+	BootstrapToken string
 
 	// Instance settings overlaid from the database (first-run setup wizard).
 	// These are non-secret values that an operator may set via the UI instead
@@ -214,30 +214,13 @@ func Load() (*Config, error) {
 		// and are not governed by this setting.
 		AllowSignups: getEnv("ALLOW_SIGNUPS", "false") == "true",
 		SupportEmail: getEnv("SUPPORT_EMAIL", ""),
-	}
 
-	// Parse ADMIN_EMAILS (comma-separated list of admin email addresses).
-	if raw := getEnv("ADMIN_EMAILS", ""); raw != "" {
-		for _, email := range strings.Split(raw, ",") {
-			email = strings.TrimSpace(strings.ToLower(email))
-			if email != "" {
-				cfg.AdminEmails = append(cfg.AdminEmails, email)
-			}
-		}
+		// One-time first-run authorization. It is intentionally env-only and
+		// must never be persisted or exposed by an API.
+		BootstrapToken: os.Getenv("OWL_INVITES_BOOTSTRAP_TOKEN"),
 	}
 
 	return cfg, nil
-}
-
-// IsAdminEmail returns true if the given email is in the ADMIN_EMAILS list.
-func (c *Config) IsAdminEmail(email string) bool {
-	email = strings.ToLower(email)
-	for _, ae := range c.AdminEmails {
-		if ae == email {
-			return true
-		}
-	}
-	return false
 }
 
 // ApplyInstanceOverrides overlays non-secret instance settings loaded from the

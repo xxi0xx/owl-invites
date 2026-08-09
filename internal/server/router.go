@@ -121,8 +121,11 @@ func (s *Server) routes() *chi.Mux {
 		api.Mount("/admin", s.statsHandler.Routes())
 		// Public, token-based email unsubscribe (no auth, CSRF-exempt).
 		api.Mount("/unsubscribe", s.suppressionHandler.Routes())
-		// Instance setup wizard: GET /setup/status is public; config read/write are admin.
-		api.Mount("/setup", s.instanceConfigHandler.Routes())
+		// Instance setup: status and one-time token bootstrap are public;
+		// ongoing config remains admin-only.
+		api.Mount("/setup", s.instanceConfigHandler.Routes(
+			security.RateLimitMiddleware(s.securityMw.AuthRateLimiter),
+		))
 	})
 
 	// --- Static files / SPA fallback ---

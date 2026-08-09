@@ -69,6 +69,14 @@ func TestAllowSignupsCanBeExplicitlyEnabled(t *testing.T) {
 	assert.True(t, cfg.AllowSignups)
 }
 
+func TestBootstrapTokenUsesOwlInvitesEnvironmentKey(t *testing.T) {
+	t.Setenv("OWL_INVITES_BOOTSTRAP_TOKEN", "operator-secret")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "operator-secret", cfg.BootstrapToken)
+}
+
 func TestTrustedProxiesRejectsInvalidEntries(t *testing.T) {
 	t.Setenv("TRUSTED_PROXIES", "not-a-network")
 

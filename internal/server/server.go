@@ -555,6 +555,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			"/api/v1/rsvp/public/",
 			"/api/v1/auth/magic-link",
 			"/api/v1/auth/verify",
+			"/api/v1/setup/bootstrap", // one-time env-token-authorized setup
 			"/api/v1/comments/public/",
 			"/api/v1/feedback/public", // unauthenticated guest bug reports
 			"/api/v1/unsubscribe",     // token-based email opt-out (no session)
@@ -920,10 +921,11 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	// on top of the env-derived config at startup.
 	instanceConfigStore := instanceconfig.NewStore(db)
 	instanceConfigService := instanceconfig.NewService(instanceConfigStore)
+	bootstrapService := instanceconfig.NewBootstrapService(instanceConfigStore, authStore, cfg)
 	if overrides, err := instanceConfigStore.GetAll(context.Background()); err == nil {
 		cfg.ApplyInstanceOverrides(overrides)
 	}
-	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, authMiddleware, adminMiddleware, logger)
+	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, bootstrapService, cfg, authMiddleware, adminMiddleware, logger)
 
 	s := &Server{
 		cfg:                   cfg,

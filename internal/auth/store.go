@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,10 +37,16 @@ func (s *Store) BeginTx(ctx context.Context) (database.Tx, error) {
 // FindOrganizerByEmail retrieves an organizer by their email address.
 func (s *Store) FindOrganizerByEmail(ctx context.Context, email string) (*Organizer, error) {
 	row := s.db.QueryRowContext(ctx,
-		"SELECT id, email, name, timezone, is_admin, created_at, updated_at FROM organizers WHERE email = ?",
-		email,
+		userSelect+" WHERE normalized_email = ?",
+		normalizeEmail(email),
 	)
 
+	return scanOrganizer(row)
+}
+
+// FindUserByEmailTx retrieves a user inside a caller-owned transaction.
+func (s *Store) FindUserByEmailTx(ctx context.Context, tx database.Tx, email string) (*User, error) {
+	row := tx.QueryRowContext(ctx, userSelect+" WHERE normalized_email = ?", normalizeEmail(email))
 	return scanOrganizer(row)
 }
 
@@ -55,7 +62,7 @@ func (s *Store) FindOrganizerByIDTx(ctx context.Context, tx database.Tx, id stri
 
 func findOrganizerByID(ctx context.Context, exec executor, id string) (*Organizer, error) {
 	row := exec.QueryRowContext(ctx,
-		"SELECT id, email, name, timezone, is_admin, created_at, updated_at FROM organizers WHERE id = ?",
+		userSelect+" WHERE id = ?",
 		id,
 	)
 
@@ -65,32 +72,87 @@ func findOrganizerByID(ctx context.Context, exec executor, id string) (*Organize
 // CreateOrganizer creates a new organizer with the given email. The ID is
 // generated as a UUIDv7.
 func (s *Store) CreateOrganizer(ctx context.Context, email string) (*Organizer, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin create user: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	user, err := createUser(ctx, tx, email, "", "UTC", InstanceRoleUser, UserStatusActive, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create user: %w", err)
+	}
+	return user, nil
+}
+
+// CreateUserTx creates a persistent user and its temporary legacy organizer
+// shadow in one transaction. The shadow is required only until event foreign
+// keys are migrated to users in the membership slice.
+func (s *Store) CreateUserTx(ctx context.Context, tx database.Tx, email, name, timezone, role, status string, invitedBy *string) (*User, error) {
+	return createUser(ctx, tx, email, name, timezone, role, status, invitedBy)
+}
+
+func createUser(ctx context.Context, exec executor, email, name, timezone, role, status string, invitedBy *string) (*User, error) {
 	id := uuid.Must(uuid.NewV7()).String()
 	now := time.Now().UTC().Format(time.RFC3339)
-
-	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO organizers (id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		id, email, "", now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create organizer: %w", err)
+	email = strings.TrimSpace(email)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	var activatedAt any
+	if status == UserStatusActive {
+		activatedAt = now
 	}
 
-	return s.FindOrganizerByID(ctx, id)
+	_, err := exec.ExecContext(ctx,
+		`INSERT INTO users (
+			id, email, normalized_email, display_name, timezone, instance_role,
+			status, invited_by_user_id, activated_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, email, normalizeEmail(email), name, timezone, role, status, invitedBy, activatedAt, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+
+	_, err = exec.ExecContext(ctx,
+		"INSERT INTO organizers (id, email, name, timezone, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, email, name, timezone, role == InstanceRoleAdmin, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create organizer compatibility row: %w", err)
+	}
+
+	return findOrganizerByID(ctx, exec, id)
 }
 
 // UpdateOrganizer updates the name, timezone, and updated_at timestamp for an organizer.
 func (s *Store) UpdateOrganizer(ctx context.Context, organizer *Organizer) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_, err := s.db.ExecContext(ctx,
-		"UPDATE organizers SET name = ?, timezone = ?, updated_at = ? WHERE id = ?",
-		organizer.Name, organizer.Timezone, now, organizer.ID,
-	)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("update organizer: %w", err)
+		return fmt.Errorf("begin update user: %w", err)
 	}
+	defer func() { _ = tx.Rollback() }()
 
+	_, err = tx.ExecContext(ctx,
+		"UPDATE users SET display_name = ?, timezone = ?, updated_at = ? WHERE id = ?",
+		organizer.Name, organizer.Timezone, now, organizer.ID)
+	if err != nil {
+		return fmt.Errorf("update user: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx,
+		"UPDATE organizers SET name = ?, timezone = ?, updated_at = ? WHERE id = ?",
+		organizer.Name, organizer.Timezone, now, organizer.ID); err != nil {
+		return fmt.Errorf("update organizer compatibility row: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update user: %w", err)
+	}
 	return nil
 }
 
@@ -278,14 +340,71 @@ func (s *Store) DeleteExpiredMagicLinks(ctx context.Context) error {
 
 // SetAdminStatus updates the is_admin flag for an organizer.
 func (s *Store) SetAdminStatus(ctx context.Context, id string, isAdmin bool) error {
-	_, err := s.db.ExecContext(ctx,
-		"UPDATE organizers SET is_admin = ? WHERE id = ?",
-		isAdmin, id,
-	)
+	role := InstanceRoleUser
+	if isAdmin {
+		role = InstanceRoleAdmin
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("set admin status: %w", err)
+		return fmt.Errorf("begin set admin status: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, "UPDATE users SET instance_role = ?, updated_at = ? WHERE id = ?", role, time.Now().UTC().Format(time.RFC3339), id); err != nil {
+		return fmt.Errorf("set user role: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, "UPDATE organizers SET is_admin = ? WHERE id = ?", isAdmin, id)
+	if err != nil {
+		return fmt.Errorf("set organizer compatibility role: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit set admin status: %w", err)
 	}
 	return nil
+}
+
+// TouchLastLoginTx records a successful authentication in the same
+// transaction that consumes the credential and creates the session.
+func (s *Store) TouchLastLoginTx(ctx context.Context, tx database.Tx, id string, at time.Time) error {
+	now := at.UTC().Format(time.RFC3339)
+	result, err := tx.ExecContext(ctx,
+		"UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ? AND status = ?",
+		now, now, id, UserStatusActive)
+	if err != nil {
+		return fmt.Errorf("touch last login: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read last login result: %w", err)
+	}
+	if affected != 1 {
+		return ErrInvalidToken
+	}
+	return nil
+}
+
+// PromoteBootstrapAdminTx activates an existing legacy-migrated identity as
+// the first persistent administrator. It is only called after the bootstrap
+// transaction has atomically claimed setup-required mode.
+func (s *Store) PromoteBootstrapAdminTx(ctx context.Context, tx database.Tx, id, name, timezone string, at time.Time) (*User, error) {
+	now := at.UTC().Format(time.RFC3339)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE users SET display_name = ?, timezone = ?,
+		instance_role = ?, status = ?, activated_at = COALESCE(activated_at, ?), updated_at = ?
+		WHERE id = ?`, name, timezone, InstanceRoleAdmin, UserStatusActive, now, now, id)
+	if err != nil {
+		return nil, fmt.Errorf("promote bootstrap admin: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return nil, fmt.Errorf("promote bootstrap admin: user not found")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE organizers SET name = ?, timezone = ?,
+		is_admin = ?, updated_at = ? WHERE id = ?`, name, timezone, true, now, id); err != nil {
+		return nil, fmt.Errorf("promote organizer compatibility row: %w", err)
+	}
+	return findOrganizerByID(ctx, tx, id)
 }
 
 // ExportOrganizerData gathers every record owned by the organizer into a
@@ -406,8 +525,11 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		// auth records tied directly to the organizer
 		{"DELETE FROM magic_links WHERE organizer_id = ?", []any{organizerID}},
 		{"DELETE FROM sessions WHERE organizer_id = ?", []any{organizerID}},
+		{"DELETE FROM account_invites WHERE target_user_id = ? OR invited_by_user_id = ?", []any{organizerID, organizerID}},
+		{"DELETE FROM admin_audit_log WHERE actor_user_id = ? OR target_user_id = ?", []any{organizerID, organizerID}},
 		// finally the organizer row itself
 		{"DELETE FROM organizers WHERE id = ?", []any{organizerID}},
+		{"DELETE FROM users WHERE id = ?", []any{organizerID}},
 	}
 
 	for _, st := range stmts {
@@ -508,16 +630,43 @@ func normalizeValue(v any) any {
 }
 
 // scanOrganizer scans a single row into an Organizer.
+const userSelect = `SELECT id, email, normalized_email, display_name, timezone,
+	instance_role, status, invited_by_user_id, activated_at, last_login_at,
+	created_at, updated_at FROM users`
+
 func scanOrganizer(row *sql.Row) (*Organizer, error) {
 	var o Organizer
 	var createdAt, updatedAt string
+	var invitedBy, activatedAt, lastLoginAt sql.NullString
 
-	err := row.Scan(&o.ID, &o.Email, &o.Name, &o.Timezone, &o.IsAdmin, &createdAt, &updatedAt)
+	err := row.Scan(
+		&o.ID, &o.Email, &o.NormalizedEmail, &o.Name, &o.Timezone,
+		&o.InstanceRole, &o.Status, &invitedBy, &activatedAt, &lastLoginAt,
+		&createdAt, &updatedAt,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("scan organizer: %w", err)
+	}
+	o.IsAdmin = o.InstanceRole == InstanceRoleAdmin
+	if invitedBy.Valid {
+		o.InvitedByUserID = &invitedBy.String
+	}
+	if activatedAt.Valid {
+		t, parseErr := time.Parse(time.RFC3339, activatedAt.String)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse activated_at: %w", parseErr)
+		}
+		o.ActivatedAt = &t
+	}
+	if lastLoginAt.Valid {
+		t, parseErr := time.Parse(time.RFC3339, lastLoginAt.String)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse last_login_at: %w", parseErr)
+		}
+		o.LastLoginAt = &t
 	}
 
 	o.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
@@ -531,4 +680,8 @@ func scanOrganizer(row *sql.Row) (*Organizer, error) {
 	}
 
 	return &o, nil
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }

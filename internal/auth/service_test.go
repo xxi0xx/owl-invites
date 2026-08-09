@@ -77,20 +77,6 @@ func TestRequestMagicLinkAllowsExistingOrganizerWhenSignupsDisabled(t *testing.T
 	assert.Equal(t, org.ID, found.ID)
 }
 
-func TestRequestMagicLinkAllowsTransitionalAdminBootstrapWhenSignupsDisabled(t *testing.T) {
-	svc, store := setupAuth(t)
-	svc.cfg.AllowSignups = false
-	svc.cfg.AdminEmails = []string{"bootstrap-admin@example.com"}
-	ctx := context.Background()
-
-	err := svc.RequestMagicLink(ctx, "bootstrap-admin@example.com")
-	require.NoError(t, err)
-
-	org, err := store.FindOrganizerByEmail(ctx, "bootstrap-admin@example.com")
-	require.NoError(t, err)
-	require.NotNil(t, org)
-}
-
 func TestRequestMagicLinkExistingUser(t *testing.T) {
 	svc, store := setupAuth(t)
 	ctx := context.Background()
@@ -274,11 +260,10 @@ func TestLogout(t *testing.T) {
 	assert.Nil(t, organizer)
 }
 
-func TestVerifyMagicLinkSyncsAdminStatus(t *testing.T) {
+func TestVerifyMagicLinkDoesNotGrantAdmin(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	store := NewStore(db)
 	cfg := testutil.TestConfig()
-	cfg.AdminEmails = []string{"admin@example.com"}
 	svc := NewService(store, cfg, zerolog.Nop())
 	ctx := context.Background()
 
@@ -297,19 +282,18 @@ func TestVerifyMagicLinkSyncsAdminStatus(t *testing.T) {
 	resp, err := svc.VerifyMagicLink(ctx, rawToken)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.True(t, resp.Organizer.IsAdmin, "admin status should be synced on login")
+	assert.False(t, resp.Organizer.IsAdmin, "login must not grant an instance role")
 
 	// Verify in DB.
 	updated, err := store.FindOrganizerByID(ctx, org.ID)
 	require.NoError(t, err)
-	assert.True(t, updated.IsAdmin)
+	assert.False(t, updated.IsAdmin)
 }
 
-func TestVerifyMagicLinkRevokesAdmin(t *testing.T) {
+func TestVerifyMagicLinkPreservesPersistentAdminRole(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	store := NewStore(db)
 	cfg := testutil.TestConfig()
-	cfg.AdminEmails = []string{} // no admins
 	svc := NewService(store, cfg, zerolog.Nop())
 	ctx := context.Background()
 
@@ -329,7 +313,7 @@ func TestVerifyMagicLinkRevokesAdmin(t *testing.T) {
 	resp, err := svc.VerifyMagicLink(ctx, rawToken)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.False(t, resp.Organizer.IsAdmin, "admin status should be revoked when email removed from ADMIN_EMAILS")
+	assert.True(t, resp.Organizer.IsAdmin, "persistent admin roles must survive login")
 }
 
 func TestRequireAdminMiddleware(t *testing.T) {

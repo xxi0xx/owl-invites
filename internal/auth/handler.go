@@ -11,6 +11,7 @@ import (
 
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // Handler provides HTTP handlers for authentication endpoints.
@@ -60,7 +61,7 @@ func (h *Handler) Routes(loginRateLimit ...func(http.Handler) http.Handler) chi.
 // handleMagicLink handles POST /api/v1/auth/magic-link.
 func (h *Handler) handleMagicLink(w http.ResponseWriter, r *http.Request) {
 	var req MagicLinkRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -89,7 +90,7 @@ func (h *Handler) handleMagicLink(w http.ResponseWriter, r *http.Request) {
 // handleVerify handles POST /api/v1/auth/verify.
 func (h *Handler) handleVerify(w http.ResponseWriter, r *http.Request) {
 	var req VerifyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -196,7 +197,7 @@ func (h *Handler) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}

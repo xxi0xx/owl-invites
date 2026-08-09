@@ -7,14 +7,14 @@
 
 	onMount(async () => {
 		try {
-			const user = await api.get<import('$lib/types').Organizer>('/auth/me');
+			const user = await api.operation('getCurrentUser');
 			$currentUser = user;
 
 			// Auto-save browser timezone to profile if not set yet.
 			if (!user.timezone) {
 				const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 				if (tz) {
-					api.patch<import('$lib/types').Organizer>('/auth/me', { timezone: tz })
+					api.operation('updateCurrentUser', { body: { timezone: tz } })
 						.then((updated) => { $currentUser = updated; })
 						.catch(() => {});
 				}

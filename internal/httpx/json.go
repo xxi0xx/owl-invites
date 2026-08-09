@@ -26,3 +26,23 @@ func DecodeJSON(r *http.Request, dst any) error {
 	}
 	return nil
 }
+
+// DecodeOptionalJSON has the same strictness as DecodeJSON but permits an
+// entirely empty body for endpoints whose request object is optional.
+func DecodeOptionalJSON(r *http.Request, dst any) error {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return fmt.Errorf("decode JSON: %w", err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("request body must contain at most one JSON value")
+		}
+		return fmt.Errorf("decode trailing JSON: %w", err)
+	}
+	return nil
+}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/yannkr/openrsvp/internal/calendar"
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // OrganizerFromCtx extracts the organizer ID from the request context.
@@ -115,7 +116,7 @@ func (h *Handler) handleSubmitRSVP(w http.ResponseWriter, r *http.Request) {
 	shareToken := chi.URLParam(r, "shareToken")
 
 	var req RSVPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -166,7 +167,7 @@ func (h *Handler) handleUpdateByToken(w http.ResponseWriter, r *http.Request) {
 	rsvpToken := chi.URLParam(r, "rsvpToken")
 
 	var req UpdateRSVPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -199,7 +200,7 @@ func (h *Handler) handleLookupRSVP(w http.ResponseWriter, r *http.Request) {
 	shareToken := chi.URLParam(r, "shareToken")
 
 	var req LookupRSVPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -390,7 +391,7 @@ func (h *Handler) handleUpdateAttendee(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req OrganizerUpdateAttendeeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

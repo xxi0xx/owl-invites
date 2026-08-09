@@ -6,7 +6,6 @@
 	import { toast } from '$lib/stores/toast';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
-	import type { Organizer } from '$lib/types';
 	import { onMount } from 'svelte';
 
 	let verifying = $state(true);
@@ -26,7 +25,7 @@
 		replaceState('/auth/verify', {});
 
 		try {
-			const result = await api.post<{ token: string; organizer: Organizer }>('/auth/verify', { token });
+			const result = await api.operation('verifyMagicLink', { body: { token } });
 			$currentUser = result.organizer;
 			toast.success('Successfully signed in!');
 			goto('/events');

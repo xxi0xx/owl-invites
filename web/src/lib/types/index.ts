@@ -1,12 +1,6 @@
-export interface Organizer {
-	id: string;
-	email: string;
-	name: string;
-	timezone: string;
-	isAdmin: boolean;
-	createdAt: string;
-	updatedAt: string;
-}
+import type { EventMembership, User } from '$lib/api/generated';
+
+export type Organizer = User;
 
 export interface Event {
 	id: string;
@@ -145,16 +139,11 @@ export interface PublicAttendance {
 	names?: string[];
 }
 
-export interface CoHost {
-	id: string;
-	eventId: string;
-	organizerId: string;
+export type CoHost = Omit<EventMembership, 'role'> & {
 	role: 'cohost';
-	addedBy: string;
-	organizerEmail: string;
-	organizerName: string;
-	createdAt: string;
-}
+	organizerEmail?: string;
+	organizerName?: string;
+};
 
 export interface ApiError {
 	error: string;

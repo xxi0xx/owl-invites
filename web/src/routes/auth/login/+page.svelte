@@ -26,7 +26,7 @@
 
 		loading = true;
 		try {
-			await api.post('/auth/magic-link', { email });
+			await api.operation('requestMagicLink', { body: { email } });
 			sent = true;
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };

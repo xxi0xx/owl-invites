@@ -30,3 +30,11 @@ func TestDecodeJSONAcceptsSingleKnownObject(t *testing.T) {
 	require.NoError(t, DecodeJSON(req, &dst))
 	require.Equal(t, "Owl Invites", dst.Name)
 }
+
+func TestDecodeOptionalJSONAllowsEmptyBodyButRemainsStrict(t *testing.T) {
+	var dst struct {
+		Notify bool `json:"notify"`
+	}
+	require.NoError(t, DecodeOptionalJSON(httptest.NewRequest("POST", "/", nil), &dst))
+	require.Error(t, DecodeOptionalJSON(httptest.NewRequest("POST", "/", strings.NewReader(`{"unknown":true}`)), &dst))
+}

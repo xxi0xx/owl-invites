@@ -311,7 +311,7 @@ func (h *Handler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventId")
 
 	var req UpdateEventRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -385,7 +385,10 @@ func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request) {
 		NotifyAttendees *bool `json:"notifyAttendees"`
 	}
 	// Body is optional; ignore decode errors for empty bodies.
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := httpx.DecodeOptionalJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
 	notifyAttendees := req.NotifyAttendees != nil && *req.NotifyAttendees
 
 	ev, err := h.service.Cancel(r.Context(), eventID, organizerID, notifyAttendees)
@@ -581,7 +584,7 @@ func (h *Handler) handleAddCoHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req AddCoHostRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

@@ -1,4 +1,5 @@
 import type { ApiError } from '$lib/types';
+import { operationDefinitions, type Operations } from './generated';
 
 const BASE_URL = '/api/v1';
 const CSRF_COOKIE = 'csrf_token';
@@ -14,7 +15,46 @@ function getCookie(name: string): string {
 /** Methods that mutate state and require CSRF protection. */
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+type OperationInput<K extends keyof Operations> =
+	(Operations[K]['parameters'] extends void
+		? { parameters?: never }
+		: { parameters: Operations[K]['parameters'] }) &
+	(Operations[K]['requestBody'] extends void
+		? { body?: never }
+		: { body: Operations[K]['requestBody'] });
+
+type OperationArguments<K extends keyof Operations> =
+	Operations[K]['parameters'] extends void
+		? Operations[K]['requestBody'] extends void
+			? [input?: OperationInput<K>]
+			: [input: OperationInput<K>]
+		: [input: OperationInput<K>];
+
 class ApiClient {
+	async operation<K extends keyof Operations>(
+		operationId: K,
+		...args: OperationArguments<K>
+	): Promise<Operations[K]['response']> {
+		const definition = operationDefinitions[operationId];
+		const input = (args[0] || {}) as { parameters?: Record<string, unknown>; body?: unknown };
+		let path: string = definition.path;
+		for (const name of definition.pathParams) {
+			const value = input.parameters?.[name];
+			if (value === undefined) throw new Error(`Missing path parameter: ${name}`);
+			path = path.replace(`{${name}}`, encodeURIComponent(String(value)));
+		}
+		const query = new URLSearchParams();
+		for (const name of definition.queryParams) {
+			const value = input.parameters?.[name];
+			if (value !== undefined) query.set(name, String(value));
+		}
+		if (query.size > 0) path += `?${query.toString()}`;
+		return this.request<Operations[K]['response']>(path, {
+			method: definition.method,
+			body: input.body === undefined ? undefined : JSON.stringify(input.body)
+		});
+	}
+
 	async request<T>(path: string, options: RequestInit = {}): Promise<T> {
 		const url = `${BASE_URL}${path}`;
 		const method = (options.method || 'GET').toUpperCase();

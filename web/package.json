@@ -6,9 +6,11 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
+		"generate:api": "node ../scripts/generate-api-client.mjs",
+		"check:api": "node ../scripts/generate-api-client.mjs --check",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "npm run check:api && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test:visual": "playwright test",
 		"test:visual:update": "playwright test --update-snapshots"

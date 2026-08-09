@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/rs/zerolog"
 
+	apidoc "github.com/yannkr/openrsvp/api"
 	"github.com/yannkr/openrsvp/internal/security"
 )
 
@@ -55,6 +56,7 @@ func (s *Server) routes() *chi.Mux {
 		api.Use(s.securityMw.Sanitize)
 
 		api.Get("/health", s.handleHealth)
+		api.Get("/openapi.json", apidoc.ServeHTTP)
 
 		// Public app config (non-sensitive feature flags).
 		api.Get("/config", func(w http.ResponseWriter, r *http.Request) {

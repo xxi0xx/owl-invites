@@ -145,6 +145,7 @@ export interface EventQuestion {
 	type: 'text' | 'select' | 'checkbox';
 	options: string[];
 	required: boolean;
+	scope: 'invitation' | 'guest';
 	sortOrder: number;
 	createdAt: string;
 	updatedAt: string;
@@ -157,6 +158,61 @@ export interface QuestionAnswer {
 	answer: string;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export type InvitationAttendance = 'pending' | 'attending' | 'maybe' | 'declined';
+
+export interface InvitationGuest {
+	id: string;
+	invitationId: string;
+	name: string;
+	origin: 'assigned' | 'additional';
+	sortOrder: number;
+	attendance: InvitationAttendance;
+}
+
+export interface InvitationRecord {
+	id: string;
+	eventId: string;
+	label: string;
+	contactEmail?: string;
+	contactPhone?: string;
+	preferredDeliveryMethod: 'email' | 'sms' | 'none';
+	additionalGuestAllowance: number;
+	source: 'private' | 'open';
+	tokenVersion: number;
+	revokedAt?: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface InvitationQuestion {
+	id: string;
+	label: string;
+	type: 'text' | 'select' | 'checkbox';
+	options: string[];
+	required: boolean;
+	scope: 'invitation' | 'guest';
+	sortOrder: number;
+}
+
+export interface InvitationHousehold {
+	invitation: InvitationRecord;
+	event: {
+		id: string;
+		title: string;
+		description: string;
+		eventDate: string;
+		endDate?: string;
+		location: string;
+		timezone: string;
+		status: string;
+	};
+	response: { id: string; invitationId: string; version: number; submittedAt?: string };
+	guests: InvitationGuest[];
+	questions: InvitationQuestion[];
+	invitationAnswers: Array<{ questionId: string; answer: string }>;
+	guestAnswers: Array<{ guestId: string; questionId: string; answer: string }>;
 }
 
 export type InviteTemplate = {

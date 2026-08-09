@@ -35,10 +35,10 @@ func (s *Store) Create(ctx context.Context, q *Question) error {
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO event_questions (id, event_id, label, type, options, required, sort_order, deleted, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		`INSERT INTO event_questions (id, event_id, label, type, options, required, scope, sort_order, deleted, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		q.ID, q.EventID, q.Label, q.Type, string(optionsJSON),
-		requiredInt, q.SortOrder, now, now,
+		requiredInt, q.Scope, q.SortOrder, now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("create question: %w", err)
@@ -55,7 +55,7 @@ func (s *Store) Create(ctx context.Context, q *Question) error {
 // by sort_order ascending.
 func (s *Store) FindByEventID(ctx context.Context, eventID string) ([]*Question, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, event_id, label, type, options, required, sort_order, deleted, created_at, updated_at
+		`SELECT id, event_id, label, type, options, required, scope, sort_order, deleted, created_at, updated_at
 		 FROM event_questions WHERE event_id = ? AND deleted = 0 ORDER BY sort_order ASC`,
 		eventID,
 	)
@@ -82,7 +82,7 @@ func (s *Store) FindByEventID(ctx context.Context, eventID string) ([]*Question,
 // FindByID retrieves a single question by ID.
 func (s *Store) FindByID(ctx context.Context, id string) (*Question, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, event_id, label, type, options, required, sort_order, deleted, created_at, updated_at
+		`SELECT id, event_id, label, type, options, required, scope, sort_order, deleted, created_at, updated_at
 		 FROM event_questions WHERE id = ?`, id,
 	)
 	return scanQuestion(row)
@@ -103,9 +103,9 @@ func (s *Store) Update(ctx context.Context, q *Question) error {
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`UPDATE event_questions SET label = ?, type = ?, options = ?, required = ?, sort_order = ?, updated_at = ?
+		`UPDATE event_questions SET label = ?, type = ?, options = ?, required = ?, scope = ?, sort_order = ?, updated_at = ?
 		 WHERE id = ?`,
-		q.Label, q.Type, string(optionsJSON), requiredInt, q.SortOrder, now, q.ID,
+		q.Label, q.Type, string(optionsJSON), requiredInt, q.Scope, q.SortOrder, now, q.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update question: %w", err)
@@ -279,7 +279,7 @@ func scanQuestion(row *sql.Row) (*Question, error) {
 
 	err := row.Scan(
 		&q.ID, &q.EventID, &q.Label, &q.Type, &optionsStr,
-		&requiredInt, &q.SortOrder, &deletedInt, &createdAt, &updatedAt,
+		&requiredInt, &q.Scope, &q.SortOrder, &deletedInt, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -300,7 +300,7 @@ func scanQuestionRow(rows *sql.Rows) (*Question, error) {
 
 	err := rows.Scan(
 		&q.ID, &q.EventID, &q.Label, &q.Type, &optionsStr,
-		&requiredInt, &q.SortOrder, &deletedInt, &createdAt, &updatedAt,
+		&requiredInt, &q.Scope, &q.SortOrder, &deletedInt, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan question row: %w", err)

@@ -31,6 +31,11 @@ var validTypes = map[string]bool{
 	"checkbox": true,
 }
 
+var validScopes = map[string]bool{
+	"invitation": true,
+	"guest":      true,
+}
+
 // Service contains the business logic for event questions.
 type Service struct {
 	store *Store
@@ -91,6 +96,13 @@ func (s *Service) Create(ctx context.Context, eventID string, req CreateQuestion
 	if req.Required != nil {
 		required = *req.Required
 	}
+	scope := req.Scope
+	if scope == "" {
+		scope = "guest"
+	}
+	if !validScopes[scope] {
+		return nil, fmt.Errorf("invalid question scope: must be invitation or guest")
+	}
 
 	sortOrder := count // default to appending at the end
 	if req.SortOrder != nil {
@@ -104,6 +116,7 @@ func (s *Service) Create(ctx context.Context, eventID string, req CreateQuestion
 		Type:      req.Type,
 		Options:   options,
 		Required:  required,
+		Scope:     scope,
 		SortOrder: sortOrder,
 	}
 
@@ -165,6 +178,12 @@ func (s *Service) Update(ctx context.Context, questionID string, req UpdateQuest
 
 	if req.Required != nil {
 		q.Required = *req.Required
+	}
+	if req.Scope != nil {
+		if !validScopes[*req.Scope] {
+			return nil, fmt.Errorf("invalid question scope: must be invitation or guest")
+		}
+		q.Scope = *req.Scope
 	}
 
 	if req.SortOrder != nil {

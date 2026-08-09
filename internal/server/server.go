@@ -21,6 +21,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/eventadmin"
 	"github.com/yannkr/openrsvp/internal/feedback"
 	"github.com/yannkr/openrsvp/internal/instanceconfig"
+	invitationdomain "github.com/yannkr/openrsvp/internal/invitation"
 	"github.com/yannkr/openrsvp/internal/invite"
 	"github.com/yannkr/openrsvp/internal/message"
 	"github.com/yannkr/openrsvp/internal/notification"
@@ -46,6 +47,7 @@ type Server struct {
 	seriesHandler         *event.SeriesHandler
 	rsvpHandler           *rsvp.Handler
 	inviteHandler         *invite.Handler
+	invitationHandler     *invitationdomain.Handler
 	messageHandler        *message.Handler
 	questionHandler       *question.Handler
 	feedbackHandler       *feedback.Handler
@@ -264,6 +266,30 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	// Wire up notification tracking layer.
 	trackingService := notification.NewTrackingService(db, logger)
 	notifHandler := notification.NewHandler(trackingService, notifService, suppressionService, authMiddleware, notification.OrganizerFromCtx(organizerFromCtx), notification.EventOwnershipChecker(checkEventOwner), logger)
+
+	// Wire up the Gate 2 invitation household and capability boundary. Config
+	// loading rejects a missing/short restore key; a directly-constructed invalid
+	// config is a programmer error and must not silently start insecure routes.
+	invitationStore := invitationdomain.NewStore(db)
+	invitationService, err := invitationdomain.NewService(invitationStore,
+		cfg.InvitationSecretKey, cfg.BaseURL, cfg.InvitationSessionExpiry,
+		cfg.InvitationRecoveryExpiry)
+	if err != nil {
+		panic("invalid invitation security configuration: " + err.Error())
+	}
+	if notifRegistry.Has(notification.ChannelEmail) {
+		invitationService.SetEmailSender(func(ctx context.Context, to, subject, htmlBody, plainBody string) error {
+			provider, err := notifRegistry.Get(notification.ChannelEmail)
+			if err != nil {
+				return err
+			}
+			_, sendErr := provider.Send(ctx, &notification.Message{To: to, Subject: subject, Body: htmlBody, Plain: plainBody})
+			return sendErr
+		})
+	}
+	invitationHandler := invitationdomain.NewHandler(invitationService, authMiddleware,
+		invitationdomain.UserFromCtx(organizerFromCtx),
+		invitationdomain.EventAccessChecker(checkEventOwner), cfg.Env == "production", logger)
 
 	// Wire email sending into auth service (breaks circular dep via function).
 	if notifRegistry.Has(notification.ChannelEmail) {
@@ -560,6 +586,11 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		RateWindow:       1 * time.Minute,
 		CSRFExcludePaths: []string{
 			"/api/v1/rsvp/public/",
+			"/api/v1/invitations/exchange",
+			"/api/v1/invitations/recovery/request",
+			"/api/v1/invitations/recovery/exchange",
+			"/api/v1/invitations/open/inspect",
+			"/api/v1/invitations/open/enroll",
 			"/api/v1/auth/magic-link",
 			"/api/v1/auth/verify",
 			"/api/v1/auth/account-invites/accept", // one-time account capability
@@ -969,6 +1000,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		seriesHandler:         seriesHandler,
 		rsvpHandler:           rsvpHandler,
 		inviteHandler:         inviteHandler,
+		invitationHandler:     invitationHandler,
 		messageHandler:        messageHandler,
 		questionHandler:       questionHandler,
 		feedbackHandler:       feedbackHandler,

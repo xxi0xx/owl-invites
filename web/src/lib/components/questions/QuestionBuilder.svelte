@@ -23,6 +23,7 @@
 	let newType = $state<'text' | 'select' | 'checkbox'>('text');
 	let newOptions: string[] = $state(['']);
 	let newRequired = $state(false);
+	let newScope = $state<'invitation' | 'guest'>('guest');
 	let saving = $state(false);
 
 	// Inline editing
@@ -31,12 +32,17 @@
 	let editType = $state<'text' | 'select' | 'checkbox'>('text');
 	let editOptions: string[] = $state([]);
 	let editRequired = $state(false);
+	let editScope = $state<'invitation' | 'guest'>('guest');
 	let editSaving = $state(false);
 
 	const typeOptions = [
 		{ value: 'text', label: 'Text' },
 		{ value: 'select', label: 'Multiple Choice' },
 		{ value: 'checkbox', label: 'Checkboxes' }
+	];
+	const scopeOptions = [
+		{ value: 'guest', label: 'Each attending guest' },
+		{ value: 'invitation', label: 'Whole invitation' }
 	];
 
 	const atLimit = $derived(questions.length >= 10);
@@ -99,6 +105,7 @@
 				type: newType,
 				options: newType === 'text' ? [] : newOptions.filter((o) => o.trim()).map((o) => o.trim()),
 				required: newRequired,
+				scope: newScope,
 				sortOrder: questions.length
 			};
 			const result = await api.post<{ data: EventQuestion }>(`/events/${eventId}/questions`, body);
@@ -108,6 +115,7 @@
 			newType = 'text';
 			newOptions = [''];
 			newRequired = false;
+			newScope = 'guest';
 			toast.success('Question added');
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };
@@ -123,6 +131,7 @@
 		editType = q.type;
 		editOptions = q.options && q.options.length > 0 ? [...q.options] : [''];
 		editRequired = q.required;
+		editScope = q.scope ?? 'guest';
 	}
 
 	function cancelEdit() {
@@ -148,6 +157,7 @@
 				type: editType,
 				options: editType === 'text' ? [] : editOptions.filter((o) => o.trim()).map((o) => o.trim()),
 				required: editRequired
+				,scope: editScope
 			};
 			const result = await api.put<{ data: EventQuestion }>(`/events/${eventId}/questions/${editingId}`, body);
 			questions = questions.map((q) => (q.id === editingId ? result.data : q));
@@ -232,6 +242,13 @@
 								options={typeOptions}
 							/>
 
+							<Select
+								label="Applies to"
+								name="edit-question-scope"
+								bind:value={editScope}
+								options={scopeOptions}
+							/>
+
 							{#if editType === 'select' || editType === 'checkbox'}
 								<div>
 									<span class="block text-sm font-medium text-neutral-700 mb-2">Options</span>
@@ -294,6 +311,7 @@
 										{#if question.required}
 											<Badge variant="info">Required</Badge>
 										{/if}
+										<Badge variant="neutral">{question.scope === 'invitation' ? 'Whole invitation' : 'Each guest'}</Badge>
 									</div>
 									<p class="text-xs text-neutral-500">{typeLabel(question.type)}</p>
 									{#if question.options && question.options.length > 0}
@@ -355,6 +373,13 @@
 					name="new-question-type"
 					bind:value={newType}
 					options={typeOptions}
+				/>
+
+				<Select
+					label="Applies to"
+					name="new-question-scope"
+					bind:value={newScope}
+					options={scopeOptions}
 				/>
 
 				{#if newType === 'select' || newType === 'checkbox'}

@@ -138,6 +138,7 @@ jobs:
           UPLOADS_DIR: ${{ runner.temp }}/owl-invites-uploads
           ALLOW_SIGNUPS: 'false'
           OWL_INVITES_BOOTSTRAP_TOKEN: gate-1-browser-bootstrap
+          OWL_INVITES_SECRET_KEY: gate-2-browser-secret-key-at-least-32-bytes
           NOTIFICATION_EMAIL_PROVIDER: smtp
           SMTP_HOST: 127.0.0.1
           SMTP_PORT: '1025'

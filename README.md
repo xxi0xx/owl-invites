@@ -158,6 +158,14 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 | `ALLOW_SIGNUPS` | `false` | Allows unsolicited organizer account creation. Admin invitations, co-host invitations, and acceptance of issued invitations remain available when this is off |
 | `OWL_INVITES_BOOTSTRAP_TOKEN` | _(empty)_ | One-time, environment-only authorization for creating the first persistent administrator. Required for fresh Internet-reachable installations; never stored in the database |
 | `OWL_INVITES_ACCOUNT_INVITE_EXPIRY` | `72h` | Lifetime of administrator-issued account invitation capabilities |
+| `OWL_INVITES_SECRET_KEY` | _(required)_ | Stable HMAC key of at least 32 bytes for invitation and open-enrollment capabilities. **Critical restore material:** back it up with the database; loss or global rotation invalidates all capability links |
+| `OWL_INVITES_INVITATION_SESSION_EXPIRY` | `720h` | Lifetime of a random, hashed-at-rest browser invitation session |
+| `OWL_INVITES_INVITATION_RECOVERY_EXPIRY` | `15m` | Lifetime of a one-time, hashed-at-rest invitation recovery capability |
+
+`OWL_INVITES_SECRET_KEY` is distinct from per-invitation `token_version`
+rotation. Incrementing one invitation's version revokes only that invitation's
+links and sessions. Replacing the global key invalidates every private and open
+capability and should be treated as an operator-controlled recovery event.
 
 ### 📧 Email Providers
 

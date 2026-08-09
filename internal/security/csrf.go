@@ -174,6 +174,11 @@ func CSRFMiddleware(excludePaths []string) func(http.Handler) http.Handler {
 			sessionValue := ""
 			if sc, err := r.Cookie("session"); err == nil {
 				sessionValue = sc.Value
+			} else if invitationSession, invitationErr := r.Cookie("owl_invitation_session"); invitationErr == nil {
+				// Invitation sessions are an independent authorization boundary.
+				// Bind CSRF tokens to them exactly as organizer sessions so a token
+				// minted for one household cannot be replayed in another.
+				sessionValue = invitationSession.Value
 			}
 
 			switch r.Method {

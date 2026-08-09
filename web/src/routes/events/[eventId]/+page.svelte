@@ -428,6 +428,7 @@
 			<div class="flex items-center gap-2">
 				<Button variant="outline" size="sm" href="/events/{eventId}/edit">Edit</Button>
 				<Button variant="outline" size="sm" href="/events/{eventId}/invite">Design Invite</Button>
+				<Button variant="outline" size="sm" href="/events/{eventId}/invitations">Invitations</Button>
 				<Button variant="outline" size="sm" href="/events/{eventId}/share">Share</Button>
 				<Button variant="outline" size="sm" href="/events/{eventId}/messages">Send Message</Button>
 				<Button variant="outline" size="sm" href="/events/{eventId}/import">Import Guests</Button>

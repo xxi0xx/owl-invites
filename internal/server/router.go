@@ -83,7 +83,11 @@ func (s *Server) routes() *chi.Mux {
 		// Series routes must be mounted before event routes so that
 		// /events/series is not captured by the event handler's /{eventId} pattern.
 		api.Mount("/events/series", s.seriesHandler.Routes())
+		api.Route("/events/{eventId}", func(eventRoutes chi.Router) {
+			eventRoutes.Mount("/", s.invitationHandler.OrganizerRoutes())
+		})
 		api.Mount("/events", s.eventHandler.Routes())
+		api.Mount("/invitations", s.invitationHandler.PublicRoutes())
 
 		// Question routes nested under events (organizer-only).
 		api.Route("/events/{eventId}/questions", func(qr chi.Router) {

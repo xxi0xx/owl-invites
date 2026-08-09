@@ -556,9 +556,8 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			"/api/v1/auth/magic-link",
 			"/api/v1/auth/verify",
 			"/api/v1/comments/public/",
-			"/api/v1/feedback/public",         // unauthenticated guest bug reports
-			"/api/v1/unsubscribe",             // token-based email opt-out (no session)
-			"/api/v1/notifications/webhooks/", // inbound SendGrid/SES delivery events
+			"/api/v1/feedback/public", // unauthenticated guest bug reports
+			"/api/v1/unsubscribe",     // token-based email opt-out (no session)
 		},
 		IsProduction: cfg.Env == "production",
 	})

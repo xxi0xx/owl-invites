@@ -223,6 +223,18 @@ func newTestHandler(tracking *TrackingService, svc *Service, suppressor Suppress
 	)
 }
 
+func TestHandlerRoutesDoNotMountUnsignedProviderWebhooks(t *testing.T) {
+	h := newTestHandler(nil, nil, nil).Routes()
+	for _, path := range []string{"/webhooks/sendgrid", "/webhooks/ses"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusNotFound, rec.Code, path)
+	}
+}
+
 func TestHandler_SendGridWebhook_BounceMarksLogAndSuppresses(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	ctx := context.Background()

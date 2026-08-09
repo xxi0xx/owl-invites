@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -137,6 +138,11 @@ func Load() (*Config, error) {
 		for _, entry := range strings.Split(raw, ",") {
 			entry = strings.TrimSpace(entry)
 			if entry != "" {
+				if net.ParseIP(entry) == nil {
+					if _, _, err := net.ParseCIDR(entry); err != nil {
+						return nil, fmt.Errorf("invalid TRUSTED_PROXIES entry %q: must be an IP address or CIDR", entry)
+					}
+				}
 				trustedProxies = append(trustedProxies, entry)
 			}
 		}
@@ -203,8 +209,11 @@ func Load() (*Config, error) {
 		// overlay these at startup via ApplyInstanceOverrides.
 		InstanceName:    getEnv("INSTANCE_NAME", "OpenRSVP"),
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "UTC"),
-		AllowSignups:    getEnv("ALLOW_SIGNUPS", "true") == "true",
-		SupportEmail:    getEnv("SUPPORT_EMAIL", ""),
+		// Public organizer self-signup is opt-in. Administrator-created account
+		// invitations and owner-sponsored co-host invitations are separate flows
+		// and are not governed by this setting.
+		AllowSignups: getEnv("ALLOW_SIGNUPS", "false") == "true",
+		SupportEmail: getEnv("SUPPORT_EMAIL", ""),
 	}
 
 	// Parse ADMIN_EMAILS (comma-separated list of admin email addresses).

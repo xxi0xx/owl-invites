@@ -74,10 +74,10 @@ func (h *Handler) Routes() chi.Router {
 	// Public tracking endpoints (no auth).
 	r.Get("/track/open/{logId}", h.handleTrackOpen)
 
-	// Public provider delivery webhooks (no auth, CSRF-exempt — providers
-	// cannot present CSRF tokens). Mounted public by the orchestrator.
-	r.Post("/webhooks/sendgrid", h.handleSendGridWebhook)
-	r.Post("/webhooks/ses", h.handleSESWebhook)
+	// Provider delivery webhooks intentionally remain unmounted until their
+	// provider-specific signatures, timestamps, replay protection, and message
+	// correlation are verified. Keeping the parser code private preserves the
+	// implementation work without exposing an unsigned suppression sink.
 
 	// Authenticated endpoints.
 	r.Group(func(auth chi.Router) {

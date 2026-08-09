@@ -228,9 +228,9 @@ All API endpoints are under `/api/v1`. The server also provides:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/rsvp/public/:shareToken` | Submit RSVP (public) |
+| POST | `/api/v1/rsvp/public/:shareToken` | Disabled during the secure invitation-model transition (`410 Gone`) |
 | GET | `/api/v1/rsvp/public/token/:rsvpToken` | Get RSVP (public) |
-| PUT | `/api/v1/rsvp/public/token/:rsvpToken` | Update RSVP (public) |
+| PUT/PATCH | `/api/v1/rsvp/public/token/:rsvpToken` | Disabled during the secure invitation-model transition (`410 Gone`) |
 | GET | `/api/v1/rsvp/event/:eventId` | List RSVPs |
 | GET | `/api/v1/rsvp/event/:eventId/stats` | RSVP stats |
 | DELETE | `/api/v1/rsvp/event/:eventId/:attendeeId` | Remove attendee |
@@ -306,8 +306,6 @@ All API endpoints are under `/api/v1`. The server also provides:
 | GET | `/api/v1/notifications/track/open/:logId` | Tracking pixel (public) |
 | GET | `/api/v1/notifications/event/:eventId/stats` | Email delivery stats (organizer) |
 | GET | `/api/v1/notifications/event/:eventId` | Delivery log (organizer) |
-| POST | `/api/v1/notifications/webhooks/sendgrid` | Inbound SendGrid delivery events (public) |
-| POST | `/api/v1/notifications/webhooks/ses` | Inbound SES delivery events (public) |
 
 Open tracking is gated by `EMAIL_OPEN_TRACKING_ENABLED`. The inbound delivery webhooks record bounces and complaints; provider signature verification is a tracked follow-up (see [Known limitations](#known-limitations)).
 
@@ -485,7 +483,7 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 - Repo hygiene: tooling directories moved into a tracked `.gitignore`, vendored e2e `node_modules` untracked, `.dockerignore` tightened
 
 **Features:**
-- Email delivery tracking is now functional. An open-tracking pixel is embedded in HTML emails (gated by `EMAIL_OPEN_TRACKING_ENABLED`), inbound SendGrid/SES delivery webhooks (`POST /api/v1/notifications/webhooks/sendgrid|ses`) record bounces and complaints, and the stats dashboard shows real numbers instead of always-zero. Provider webhook signature verification is a documented follow-up
+- Email open tracking remains available when enabled. Inbound SendGrid/SES delivery webhook parsers are retained but are not publicly mounted until provider signature, timestamp, replay, and message-correlation verification is implemented.
 - Email unsubscribe and suppression list. Reminder and message emails carry an unsubscribe footer, a public token-based unsubscribe page lives at `/unsubscribe`, and suppressed addresses are skipped before sending. Migration 000030
 - Account deletion and data export. Organizers can export all their data (`GET /api/v1/auth/me/export`) and permanently delete their account and all associated data (`DELETE /api/v1/auth/me`) from a new Account settings page (`/account`)
 - Setup wizard. DB-backed non-secret instance settings (instance name, default timezone, allow-signups, support email) via `/setup`, stored in `instance_config` (migration 000031) and overlaid on the environment config at startup. Secrets remain environment-only

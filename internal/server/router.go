@@ -22,6 +22,9 @@ func (s *Server) routes() *chi.Mux {
 	r := chi.NewRouter()
 
 	// --- Middleware ---
+	// Resolve client identity and forwarded scheme before any middleware uses
+	// them. Forwarded headers from untrusted peers are stripped fail-closed.
+	r.Use(security.TrustedProxyMiddleware(s.cfg.TrustedProxies))
 	// Set baseline security headers on every response.
 	r.Use(security.SecurityHeadersMiddleware())
 	r.Use(cors.Handler(cors.Options{
@@ -35,13 +38,6 @@ func (s *Server) routes() *chi.Mux {
 	r.Use(middleware.Compress(5, "text/html", "text/css", "application/javascript", "application/json", "image/svg+xml", "text/plain"))
 	r.Use(zerologMiddleware(s.logger))
 	r.Use(middleware.Recoverer)
-	// Only trust X-Forwarded-For / X-Real-IP when TRUSTED_PROXIES is
-	// configured.  Without it, any client can spoof their IP and bypass
-	// rate limiting.  Operators behind a reverse proxy should set
-	// TRUSTED_PROXIES to their proxy's address(es).
-	if len(s.cfg.TrustedProxies) > 0 {
-		r.Use(middleware.RealIP)
-	}
 	r.Use(middleware.RequestID)
 	r.Use(s.securityMw.CSRF)
 

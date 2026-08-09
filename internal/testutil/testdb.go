@@ -177,5 +177,8 @@ func TestConfig() *config.Config {
 		SMTPFrom:                  "test@openrsvp.local",
 		DefaultRetentionDays:      30,
 		MaxCoHostsPerEvent:        10,
+		// Most legacy tests exercise the pre-Gate-1 open-signup behavior
+		// explicitly. Production configuration defaults this to false.
+		AllowSignups: true,
 	}
 }

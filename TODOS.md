@@ -22,7 +22,7 @@
 
 ### Webhook Provider Signature Verification (P2)
 - **What:** Verify inbound delivery webhook signatures for SendGrid and SES before recording bounce/complaint events.
-- **Why:** The inbound delivery webhooks (`POST /api/v1/notifications/webhooks/sendgrid|ses`, shipped in v1.6.0) are unauthenticated, so a third party could forge delivery events. SendGrid signs with an Ed25519 public key; SES uses SNS message signatures.
+- **Why:** The inbound delivery webhook parsers are intentionally unmounted because unsigned payloads could forge delivery events and globally suppress recipients. SendGrid signs with an Ed25519 public key; SES uses SNS message signatures.
 - **Context:** Documented as a known limitation in the README. Until then, operators should restrict access to these endpoints at the reverse proxy.
 - **Added:** 2026-06-10
 

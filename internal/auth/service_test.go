@@ -4,8 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,6 +45,50 @@ func TestRequestMagicLink(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, org)
 	assert.Equal(t, "test@example.com", org.Email)
+}
+
+func TestRequestMagicLinkDoesNotCreateOrganizerWhenSignupsDisabled(t *testing.T) {
+	svc, store := setupAuth(t)
+	svc.cfg.AllowSignups = false
+	ctx := context.Background()
+
+	err := svc.RequestMagicLink(ctx, "new@example.com")
+	require.NoError(t, err, "the public response must remain enumeration-resistant")
+
+	org, err := store.FindOrganizerByEmail(ctx, "new@example.com")
+	require.NoError(t, err)
+	assert.Nil(t, org)
+}
+
+func TestRequestMagicLinkAllowsExistingOrganizerWhenSignupsDisabled(t *testing.T) {
+	svc, store := setupAuth(t)
+	svc.cfg.AllowSignups = false
+	ctx := context.Background()
+
+	org, err := store.CreateOrganizer(ctx, "existing-disabled-signups@example.com")
+	require.NoError(t, err)
+
+	err = svc.RequestMagicLink(ctx, org.Email)
+	require.NoError(t, err)
+
+	found, err := store.FindOrganizerByEmail(ctx, org.Email)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, org.ID, found.ID)
+}
+
+func TestRequestMagicLinkAllowsTransitionalAdminBootstrapWhenSignupsDisabled(t *testing.T) {
+	svc, store := setupAuth(t)
+	svc.cfg.AllowSignups = false
+	svc.cfg.AdminEmails = []string{"bootstrap-admin@example.com"}
+	ctx := context.Background()
+
+	err := svc.RequestMagicLink(ctx, "bootstrap-admin@example.com")
+	require.NoError(t, err)
+
+	org, err := store.FindOrganizerByEmail(ctx, "bootstrap-admin@example.com")
+	require.NoError(t, err)
+	require.NotNil(t, org)
 }
 
 func TestRequestMagicLinkExistingUser(t *testing.T) {
@@ -128,6 +175,44 @@ func TestVerifyUsedLink(t *testing.T) {
 	resp, err := svc.VerifyMagicLink(ctx, rawToken)
 	assert.ErrorIs(t, err, ErrInvalidToken)
 	assert.Nil(t, resp)
+}
+
+func TestVerifyMagicLinkConcurrentConsumptionCreatesOneSession(t *testing.T) {
+	svc, store := setupAuth(t)
+	ctx := context.Background()
+
+	org, err := store.CreateOrganizer(ctx, "concurrent@example.com")
+	require.NoError(t, err)
+
+	rawToken := "abababababababababababababababababababababababababababababababab"
+	err = store.CreateMagicLink(ctx, testHash(rawToken), org.ID, time.Now().UTC().Add(15*time.Minute))
+	require.NoError(t, err)
+
+	var successes atomic.Int32
+	var invalid atomic.Int32
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, verifyErr := svc.VerifyMagicLink(ctx, rawToken)
+			switch {
+			case verifyErr == nil:
+				successes.Add(1)
+			case errors.Is(verifyErr, ErrInvalidToken):
+				invalid.Add(1)
+			default:
+				t.Errorf("unexpected verification error: %v", verifyErr)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	assert.Equal(t, int32(1), successes.Load())
+	assert.Equal(t, int32(1), invalid.Load())
 }
 
 func TestValidateSession(t *testing.T) {

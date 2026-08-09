@@ -153,23 +153,32 @@ func (s *Store) FindMagicLinkByHash(ctx context.Context, tokenHash string) (*Mag
 
 // MarkMagicLinkUsed sets the used_at timestamp for a magic link.
 func (s *Store) MarkMagicLinkUsed(ctx context.Context, id string) error {
-	return markMagicLinkUsed(ctx, s.db, id)
+	return markMagicLinkUsed(ctx, s.db, id, time.Now().UTC())
 }
 
-// MarkMagicLinkUsedTx sets the used_at timestamp for a magic link within a transaction.
-func (s *Store) MarkMagicLinkUsedTx(ctx context.Context, tx database.Tx, id string) error {
-	return markMagicLinkUsed(ctx, tx, id)
+// MarkMagicLinkUsedTx atomically consumes a live magic link within a
+// transaction. A link that is already used or expired is indistinguishable
+// from any other invalid token.
+func (s *Store) MarkMagicLinkUsedTx(ctx context.Context, tx database.Tx, id string, now time.Time) error {
+	return markMagicLinkUsed(ctx, tx, id, now)
 }
 
-func markMagicLinkUsed(ctx context.Context, exec executor, id string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+func markMagicLinkUsed(ctx context.Context, exec executor, id string, now time.Time) error {
+	nowText := now.UTC().Format(time.RFC3339)
 
-	_, err := exec.ExecContext(ctx,
-		"UPDATE magic_links SET used_at = ? WHERE id = ?",
-		now, id,
+	result, err := exec.ExecContext(ctx,
+		"UPDATE magic_links SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?",
+		nowText, id, nowText,
 	)
 	if err != nil {
 		return fmt.Errorf("mark magic link used: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read magic link consume result: %w", err)
+	}
+	if affected != 1 {
+		return ErrInvalidToken
 	}
 
 	return nil

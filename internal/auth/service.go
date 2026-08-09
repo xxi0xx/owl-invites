@@ -64,6 +64,15 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 		return fmt.Errorf("find organizer: %w", err)
 	}
 
+	if organizer == nil && !s.cfg.AllowSignups && !s.cfg.IsAdminEmail(email) {
+		// Preserve the same public response as an existing account. Account
+		// creation through administrator/co-host invitations is handled by a
+		// separate, explicit flow and is not controlled by AllowSignups. The
+		// ADMIN_EMAILS exception preserves the pre-Gate-1 bootstrap path until
+		// OWL_INVITES_BOOTSTRAP_TOKEN replaces it in the next review slice.
+		return nil
+	}
+
 	if organizer == nil {
 		organizer, err = s.store.CreateOrganizer(ctx, email)
 		if err != nil {
@@ -159,7 +168,10 @@ func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*AuthRe
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := s.store.MarkMagicLinkUsedTx(ctx, tx, ml.ID); err != nil {
+	if err := s.store.MarkMagicLinkUsedTx(ctx, tx, ml.ID, time.Now().UTC()); err != nil {
+		if errors.Is(err, ErrInvalidToken) {
+			return nil, ErrInvalidToken
+		}
 		return nil, fmt.Errorf("mark magic link used: %w", err)
 	}
 

@@ -52,3 +52,35 @@ func TestLoadSESEnv(t *testing.T) {
 	assert.Equal(t, "ses-pass", cfg.SESPassword)
 	assert.Equal(t, "ses@example.com", cfg.SESFrom)
 }
+
+func TestAllowSignupsDefaultsOff(t *testing.T) {
+	t.Setenv("ALLOW_SIGNUPS", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.AllowSignups)
+}
+
+func TestAllowSignupsCanBeExplicitlyEnabled(t *testing.T) {
+	t.Setenv("ALLOW_SIGNUPS", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.AllowSignups)
+}
+
+func TestTrustedProxiesRejectsInvalidEntries(t *testing.T) {
+	t.Setenv("TRUSTED_PROXIES", "not-a-network")
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid TRUSTED_PROXIES")
+}
+
+func TestTrustedProxiesAcceptsIPsAndCIDRs(t *testing.T) {
+	t.Setenv("TRUSTED_PROXIES", "127.0.0.1, 10.0.0.0/8, 2001:db8::/32")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"127.0.0.1", "10.0.0.0/8", "2001:db8::/32"}, cfg.TrustedProxies)
+}

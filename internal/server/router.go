@@ -71,6 +71,9 @@ func (s *Server) routes() *chi.Mux {
 		// management endpoints (/me, /logout) fall under the general API
 		// rate limiter so SPA page-load calls to /auth/me don't exhaust
 		// the auth rate budget.
+		api.Mount("/auth/account-invites", s.userAdminHandler.PublicRoutes(
+			security.RateLimitMiddleware(s.securityMw.AuthRateLimiter),
+		))
 		api.Mount("/auth", s.authHandler.Routes(
 			security.RateLimitMiddleware(s.securityMw.AuthRateLimiter),
 		))
@@ -118,6 +121,8 @@ func (s *Server) routes() *chi.Mux {
 		api.Mount("/comments", s.commentHandler.Routes())
 		api.Mount("/webhooks", s.webhookHandler.Routes())
 		api.Mount("/notifications", s.notifHandler.Routes())
+		api.Mount("/admin/users", s.userAdminHandler.UserRoutes())
+		api.Mount("/admin/audit", s.userAdminHandler.AuditRoutes())
 		api.Mount("/admin", s.statsHandler.Routes())
 		// Public, token-based email unsubscribe (no auth, CSRF-exempt).
 		api.Mount("/unsubscribe", s.suppressionHandler.Routes())

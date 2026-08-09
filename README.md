@@ -134,7 +134,9 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 | `FEEDBACK_EMAIL` | _(empty)_ | Email address to receive feedback (fallback) |
 | `TRUSTED_PROXIES` | _(empty)_ | Comma-separated CIDR ranges of trusted reverse proxies (e.g. `10.0.0.0/8,172.16.0.0/12`). When set, `X-Forwarded-For` / `X-Real-IP` headers are trusted to determine client IP. When empty (default), only `RemoteAddr` is used, which prevents IP spoofing. **Set this when running behind a reverse proxy (Nginx, Caddy, etc.)** |
 | `MAX_COHOSTS_PER_EVENT` | `10` | Maximum number of co-hosts allowed per event |
-| `ADMIN_EMAILS` | _(empty)_ | Comma-separated list of instance admin emails (e.g. `admin@example.com,ops@example.com`). Admin status is synced on every page load — add or remove emails and changes take effect immediately without requiring re-login |
+| `ALLOW_SIGNUPS` | `false` | Allows unsolicited organizer account creation. Admin invitations, co-host invitations, and acceptance of issued invitations remain available when this is off |
+| `OWL_INVITES_BOOTSTRAP_TOKEN` | _(empty)_ | One-time, environment-only authorization for creating the first persistent administrator. Required for fresh Internet-reachable installations; never stored in the database |
+| `OWL_INVITES_ACCOUNT_INVITE_EXPIRY` | `72h` | Lifetime of administrator-issued account invitation capabilities |
 
 ### 📧 Email Providers
 

@@ -170,6 +170,7 @@ func TestConfig() *config.Config {
 		DBDSN:                     ":memory:",
 		MagicLinkExpiry:           15 * time.Minute,
 		SessionExpiry:             168 * time.Hour,
+		AccountInviteExpiry:       72 * time.Hour,
 		BaseURL:                   "http://localhost:8080",
 		NotificationEmailProvider: "smtp",
 		SMTPHost:                  "localhost",

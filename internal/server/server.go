@@ -30,6 +30,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/security"
 	"github.com/yannkr/openrsvp/internal/stats"
 	"github.com/yannkr/openrsvp/internal/suppression"
+	"github.com/yannkr/openrsvp/internal/useradmin"
 	"github.com/yannkr/openrsvp/internal/webhook"
 )
 
@@ -55,6 +56,7 @@ type Server struct {
 	statsHandler          *stats.Handler
 	suppressionHandler    *suppression.Handler
 	instanceConfigHandler *instanceconfig.Handler
+	userAdminHandler      *useradmin.Handler
 	scheduler             *scheduler.Scheduler
 	securityMw            *security.Middleware
 	uploadsDir            string
@@ -555,7 +557,8 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			"/api/v1/rsvp/public/",
 			"/api/v1/auth/magic-link",
 			"/api/v1/auth/verify",
-			"/api/v1/setup/bootstrap", // one-time env-token-authorized setup
+			"/api/v1/auth/account-invites/accept", // one-time account capability
+			"/api/v1/setup/bootstrap",             // one-time env-token-authorized setup
 			"/api/v1/comments/public/",
 			"/api/v1/feedback/public", // unauthenticated guest bug reports
 			"/api/v1/unsubscribe",     // token-based email opt-out (no session)
@@ -916,6 +919,22 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	adminMiddleware := auth.RequireAdmin()
 	statsHandler := stats.NewHandler(statsService, authMiddleware, adminMiddleware, logger)
 
+	// Persistent user administration and account invitations. Invitation
+	// capabilities are delivered only through the configured email provider.
+	userAdminStore := useradmin.NewStore(db)
+	userAdminService := useradmin.NewService(userAdminStore, authStore, cfg, logger)
+	if notifRegistry.Has(notification.ChannelEmail) {
+		userAdminService.SetEmailSender(func(ctx context.Context, to, subject, htmlBody, plainBody string) error {
+			provider, err := notifRegistry.Get(notification.ChannelEmail)
+			if err != nil {
+				return err
+			}
+			_, sendErr := provider.Send(ctx, &notification.Message{To: to, Subject: subject, Body: htmlBody, Plain: plainBody})
+			return sendErr
+		})
+	}
+	userAdminHandler := useradmin.NewHandler(userAdminService, cfg, authMiddleware, adminMiddleware, logger)
+
 	// Wire up instance setup/config layer. DB-backed non-secret overrides
 	// (instance name, default timezone, signups, support email) are overlaid
 	// on top of the env-derived config at startup.
@@ -947,6 +966,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		statsHandler:          statsHandler,
 		suppressionHandler:    suppressionHandler,
 		instanceConfigHandler: instanceConfigHandler,
+		userAdminHandler:      userAdminHandler,
 		scheduler:             sched,
 		securityMw:            secMw,
 		uploadsDir:            uploadsDir,

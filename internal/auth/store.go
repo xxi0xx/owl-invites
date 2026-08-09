@@ -407,6 +407,23 @@ func (s *Store) PromoteBootstrapAdminTx(ctx context.Context, tx database.Tx, id,
 	return findOrganizerByID(ctx, tx, id)
 }
 
+// ActivateInvitedUserTx transitions exactly one invited identity to active.
+// It is intentionally conditional so an account-invitation capability cannot
+// be reused after another concurrent acceptance wins.
+func (s *Store) ActivateInvitedUserTx(ctx context.Context, tx database.Tx, id string, at time.Time) (*User, error) {
+	now := at.UTC().Format(time.RFC3339)
+	result, err := tx.ExecContext(ctx, `UPDATE users SET status = ?, activated_at = ?,
+		updated_at = ? WHERE id = ? AND status = ?`, UserStatusActive, now, now, id, UserStatusInvited)
+	if err != nil {
+		return nil, fmt.Errorf("activate invited user: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return nil, ErrInvalidToken
+	}
+	return findOrganizerByID(ctx, tx, id)
+}
+
 // ExportOrganizerData gathers every record owned by the organizer into a
 // single document suitable for a GDPR-style data export. It reads the
 // organizer's profile, their events, and every child record belonging to
@@ -527,6 +544,7 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		{"DELETE FROM sessions WHERE organizer_id = ?", []any{organizerID}},
 		{"DELETE FROM account_invites WHERE target_user_id = ? OR invited_by_user_id = ?", []any{organizerID, organizerID}},
 		{"DELETE FROM admin_audit_log WHERE actor_user_id = ? OR target_user_id = ?", []any{organizerID, organizerID}},
+		{"UPDATE users SET invited_by_user_id = NULL WHERE invited_by_user_id = ?", []any{organizerID}},
 		// finally the organizer row itself
 		{"DELETE FROM organizers WHERE id = ?", []any{organizerID}},
 		{"DELETE FROM users WHERE id = ?", []any{organizerID}},

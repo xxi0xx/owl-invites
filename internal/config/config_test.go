@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,6 +76,14 @@ func TestBootstrapTokenUsesOwlInvitesEnvironmentKey(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, "operator-secret", cfg.BootstrapToken)
+}
+
+func TestAccountInviteExpiryUsesOwlInvitesEnvironmentKey(t *testing.T) {
+	t.Setenv("OWL_INVITES_ACCOUNT_INVITE_EXPIRY", "48h")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 48*time.Hour, cfg.AccountInviteExpiry)
 }
 
 func TestTrustedProxiesRejectsInvalidEntries(t *testing.T) {

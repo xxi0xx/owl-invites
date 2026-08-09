@@ -22,9 +22,10 @@ type Config struct {
 	DBDSN    string
 
 	// Auth
-	MagicLinkExpiry time.Duration
-	SessionExpiry   time.Duration
-	BaseURL         string
+	MagicLinkExpiry     time.Duration
+	SessionExpiry       time.Duration
+	AccountInviteExpiry time.Duration
+	BaseURL             string
 
 	// Notifications
 	NotificationEmailProvider string
@@ -108,6 +109,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid SESSION_EXPIRY: %w", err)
 	}
 
+	accountInviteExpiry, err := time.ParseDuration(getEnv("OWL_INVITES_ACCOUNT_INVITE_EXPIRY", "72h"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid OWL_INVITES_ACCOUNT_INVITE_EXPIRY: %w", err)
+	}
+	if accountInviteExpiry <= 0 {
+		return nil, fmt.Errorf("invalid OWL_INVITES_ACCOUNT_INVITE_EXPIRY: must be greater than zero")
+	}
+
 	baseURL := getEnv("BASE_URL", "http://localhost:8080")
 
 	smtpPort, err := strconv.Atoi(getEnv("SMTP_PORT", "587"))
@@ -163,9 +172,10 @@ func Load() (*Config, error) {
 		DBDriver: dbDriver,
 		DBDSN:    dbDSN,
 
-		MagicLinkExpiry: magicLinkExpiry,
-		SessionExpiry:   sessionExpiry,
-		BaseURL:         baseURL,
+		MagicLinkExpiry:     magicLinkExpiry,
+		SessionExpiry:       sessionExpiry,
+		AccountInviteExpiry: accountInviteExpiry,
+		BaseURL:             baseURL,
 
 		NotificationEmailProvider: getEnv("NOTIFICATION_EMAIL_PROVIDER", "smtp"),
 		NotificationSMSProvider:   getEnv("NOTIFICATION_SMS_PROVIDER", ""),

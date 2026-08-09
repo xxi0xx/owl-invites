@@ -99,10 +99,10 @@ func TestConcurrentBootstrapClaimsOnlyOneAdministrator(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := bootstrap.Bootstrap(context.Background(), validBootstrapRequest())
-			switch {
-			case err == nil:
+			switch err {
+			case nil:
 				successes.Add(1)
-			case err == ErrSetupComplete:
+			case ErrSetupComplete:
 				completed.Add(1)
 			default:
 				t.Errorf("unexpected bootstrap result: %v", err)

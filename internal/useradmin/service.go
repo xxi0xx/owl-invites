@@ -381,7 +381,6 @@ func (s *Service) changeUser(ctx context.Context, actor *auth.User, userID strin
 	if persistedActor == nil || !persistedActor.IsAdmin || persistedActor.Status != auth.UserStatusActive {
 		return ErrUserNotFound
 	}
-	actor = persistedActor
 	target, err := s.authStore.FindOrganizerByIDTx(ctx, tx, userID)
 	if err != nil {
 		return err

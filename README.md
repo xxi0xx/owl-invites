@@ -150,6 +150,20 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 | `SMTP_PASSWORD` | SMTP password |
 | `SMTP_FROM` | Sender email address |
 
+### Host-side administrator recovery
+
+After first-run setup is committed, the bootstrap endpoint stays closed. If
+all administrators become unavailable, run the Owl Invites CLI on a trusted
+host with the same database configuration:
+
+```bash
+go run ./cmd/owl-invites admin promote --email operator@example.com
+```
+
+The user must already exist. The command activates and promotes that identity
+and records an `emergency_role_recovery` entry with a CLI actor in the minimal
+admin audit trail. It does not read or reuse `OWL_INVITES_BOOTSTRAP_TOKEN`.
+
 **SendGrid** (`NOTIFICATION_EMAIL_PROVIDER=sendgrid`):
 
 | Variable | Description |

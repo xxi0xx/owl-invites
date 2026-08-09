@@ -21,10 +21,13 @@ test('fresh instance bootstraps and an existing user signs in through a Mailpit 
 
 	await expect(page).toHaveURL(/\/events$/);
 	await expect(page.getByRole('heading', { name: 'My Events' })).toBeVisible();
+	await page.goto('/');
+	await expect(page).toHaveURL(/\/events$/);
 
 	await page.goto('/auth/logout');
-	await page.waitForURL('/');
-	await page.goto('/auth/login');
+	await expect(page).toHaveURL(/\/auth\/login$/);
+	await page.goto('/');
+	await expect(page).toHaveURL(/\/auth\/login$/);
 	await page.getByLabel('Email address').fill(ADMIN_EMAIL);
 	await page.getByRole('button', { name: 'Send Magic Link' }).click();
 	await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();

@@ -49,6 +49,26 @@ Two compatibility shadows remain deliberately during the staged migration:
 - `events.organizer_id` mirrors the current owner for legacy reads; membership
   is authoritative for access decisions.
 
+These shadows are transitional, not alternate authorities. They are scheduled
+for removal during Gate 2 once the following exit criteria are met:
+
+- `organizers` can be removed after authentication sessions and magic links,
+  account profile/export/deletion, event-series ownership, administrator
+  statistics, retention notifications, and their fixtures read `users` (and
+  memberships where event scope is required); all identity writes target only
+  `users`; and both database dialects have a tested migration that removes the
+  table without losing user or session relationships.
+- `events.organizer_id` can be removed after event create/list/update, series
+  materialization, notification recipient lookup, retention cleanup, stats,
+  ownership transfer, and their fixtures resolve the single `owner`
+  `event_memberships` row; all ownership writes target only memberships; and
+  both database dialects have a tested migration that drops the column and its
+  dependent constraints/indexes.
+- Before either destructive migration, parity checks must show every legacy
+  organizer has a matching `users` row, every event has exactly one owner
+  membership, and each mirror value matches that membership. Gate 2 must keep
+  the shadows only until these remaining consumers and checks are complete.
+
 Audit actor and target foreign keys use `ON DELETE SET NULL`, so account
 deletion does not erase the fact that a sensitive action occurred.
 
@@ -137,7 +157,10 @@ The root route resolves context before showing a destination:
 
 1. Fresh instance -> `/setup`
 2. Configured and authenticated -> `/events`
-3. Configured and anonymous -> public landing page
+3. Configured and anonymous -> `/auth/login`
+
+The installed application does not serve a marketing page at `/`. Public
+invitation and RSVP capability URLs remain anonymous at their dedicated routes.
 
 The setup UI explains the environment bootstrap token and defaults open signup
 off. Administration now exposes Overview, Users & Invites, Audit Log, and

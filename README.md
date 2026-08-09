@@ -2,6 +2,13 @@
 
 A self-hosted, privacy-first alternative to Evite. Create beautiful event invitations, manage RSVPs, and communicate with guests — all without ads or data tracking. Perfect for birthday parties, gatherings, and celebrations.
 
+> [!WARNING]
+> **Owl Invites is in staged redevelopment. Gate 1 is a development milestone,
+> not a production release.** Legacy RSVP mutation is intentionally disabled
+> pending the Gate 2 invitation-domain redesign. No Owl Invites production
+> container image has been published; do not deploy an upstream OpenRSVP image
+> or an unpinned `:latest` tag as a substitute for this branch.
+
 ## ✨ Features
 
 - 🎨 **Beautiful Invitation Templates** — 5 customizable themes (Balloon Party, Confetti, Unicorn Magic, Superhero, Garden Picnic) with custom colors, fonts, and text
@@ -26,32 +33,24 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 
 ## 🚀 Quick Start
 
-### Docker One-Liner
+### Gate 1 local container build
+
+Run this from a checkout of `codex/gate-1-foundation`:
 
 ```bash
-docker run -d -p 8080:8080 -v openrsvp-data:/data \
-  -e BASE_URL=http://localhost:8080 \
-  -e OWL_INVITES_BOOTSTRAP_TOKEN=replace-with-a-long-random-secret \
-  ghcr.io/yannkr/openrsvp:latest
+cp .env.example .env
+# Set OWL_INVITES_BOOTSTRAP_TOKEN in .env to a long random secret.
+docker compose up -d --build
 ```
 
-Visit http://localhost:8080, enter the same bootstrap token in the first-run
+Visit http://localhost:8091, enter the same bootstrap token in the first-run
 wizard, and create the first administrator. After setup succeeds, remove the
 token from the container environment; the backend permanently closes the
 bootstrap endpoint either way.
 
-### Docker Compose
-
-```bash
-git clone https://github.com/yannkr/openrsvp.git
-cd openrsvp
-cp .env.example .env
-docker compose up -d
-```
-
-Set `OWL_INVITES_BOOTSTRAP_TOKEN` in `.env` before the first start. The local
-Compose stack includes Mailpit; captured development email is available at
-http://localhost:8025.
+The local Compose stack builds the checked-out source and includes Mailpit;
+captured development email is available at http://localhost:8025. This is a
+development/review configuration, not production deployment guidance.
 
 ### With PostgreSQL
 
@@ -372,21 +371,33 @@ Non-secret instance settings (instance name, default timezone, allow-signups, su
 
 ## 🏠 Self-Hosting Guide
 
-### 🐳 Docker (recommended)
+### 🐳 Docker
 
-The fastest way to get a production instance running:
+> [!CAUTION]
+> Gate 1 has no published Owl Invites production image and is not approved for
+> production deployment. The example below builds a review image from the
+> current checkout; it does not pull an image from GHCR.
+
+Build a local, explicitly named image from this branch:
+
+```bash
+docker build --tag owl-invites:gate-1-review .
+```
+
+For an isolated review deployment, use that exact local tag:
 
 ```yaml
 # docker-compose.yml
 services:
   openrsvp:
-    image: ghcr.io/yannkr/openrsvp:latest
+    image: owl-invites:gate-1-review
     restart: unless-stopped
     expose:
       - 8080
     environment:
       ENV: production
       BASE_URL: https://rsvp.yourdomain.com
+      OWL_INVITES_BOOTSTRAP_TOKEN: replace-with-a-long-random-secret
       DB_DSN: /data/openrsvp.db
       UPLOADS_DIR: /data/uploads
       SMTP_HOST: smtp.yourdomain.com

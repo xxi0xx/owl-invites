@@ -30,7 +30,7 @@ func (s *SeriesStore) Create(ctx context.Context, es *EventSeries) error {
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO event_series (id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at)
+		`INSERT INTO event_series (id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		es.ID, es.OrganizerID, es.Title, es.Description, es.Location, es.Timezone,
 		es.EventTime, es.DurationMinutes, es.RecurrenceRule, recurrenceEnd,
@@ -52,7 +52,7 @@ func (s *SeriesStore) Create(ctx context.Context, es *EventSeries) error {
 // FindByID retrieves an event series by its ID.
 func (s *SeriesStore) FindByID(ctx context.Context, id string) (*EventSeries, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
+		`SELECT id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
 		 FROM event_series WHERE id = ?`, id,
 	)
 	return scanSeries(row)
@@ -61,8 +61,8 @@ func (s *SeriesStore) FindByID(ctx context.Context, id string) (*EventSeries, er
 // FindByOrganizerID retrieves all event series belonging to an organizer.
 func (s *SeriesStore) FindByOrganizerID(ctx context.Context, organizerID string) ([]*EventSeries, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
-		 FROM event_series WHERE organizer_id = ? ORDER BY created_at DESC`, organizerID,
+		`SELECT id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
+		 FROM event_series WHERE owner_user_id = ? ORDER BY created_at DESC`, organizerID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find series by organizer: %w", err)
@@ -87,7 +87,7 @@ func (s *SeriesStore) FindByOrganizerID(ctx context.Context, organizerID string)
 // FindAllActive retrieves all active event series.
 func (s *SeriesStore) FindAllActive(ctx context.Context) ([]*EventSeries, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
+		`SELECT id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
 		 FROM event_series WHERE series_status = 'active'`,
 	)
 	if err != nil {

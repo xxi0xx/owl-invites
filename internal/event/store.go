@@ -23,7 +23,7 @@ func NewStore(db database.DB) *Store {
 }
 
 // eventColumns is the standard column list for event queries.
-const eventColumns = `id, organizer_id, title, description, event_date, end_date, location, timezone, retention_days, status, share_token, contact_requirement, show_headcount, show_guest_list, rsvp_deadline, max_capacity, waitlist_enabled, comments_enabled, series_id, series_index, series_override, created_at, updated_at`
+const eventColumns = `id, (SELECT owner.user_id FROM event_memberships owner WHERE owner.event_id = events.id AND owner.role = 'owner') AS organizer_id, title, description, event_date, end_date, location, timezone, retention_days, status, share_token, contact_requirement, show_headcount, show_guest_list, rsvp_deadline, max_capacity, waitlist_enabled, comments_enabled, series_id, series_index, series_override, created_at, updated_at`
 
 // Create inserts a new event into the database.
 func (s *Store) Create(ctx context.Context, e *Event) error {
@@ -62,9 +62,9 @@ func createEvent(ctx context.Context, exec eventExecutor, e *Event) error {
 	}
 
 	_, err := exec.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, description, event_date, end_date, location, timezone, retention_days, status, share_token, contact_requirement, show_headcount, show_guest_list, rsvp_deadline, max_capacity, waitlist_enabled, comments_enabled, series_id, series_index, series_override, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.OrganizerID, e.Title, e.Description, eventDate, endDate,
+		`INSERT INTO events (id, title, description, event_date, end_date, location, timezone, retention_days, status, share_token, contact_requirement, show_headcount, show_guest_list, rsvp_deadline, max_capacity, waitlist_enabled, comments_enabled, series_id, series_index, series_override, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.Title, e.Description, eventDate, endDate,
 		e.Location, e.Timezone, e.RetentionDays, e.Status, e.ShareToken, e.ContactRequirement,
 		boolToInt(e.ShowHeadcount), boolToInt(e.ShowGuestList), rsvpDeadline, e.MaxCapacity, boolToInt(e.WaitlistEnabled), boolToInt(e.CommentsEnabled),
 		e.SeriesID, e.SeriesIndex, boolToInt(e.SeriesOverride), now, now,

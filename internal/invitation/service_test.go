@@ -31,21 +31,13 @@ func newServiceFixture(t *testing.T) *serviceFixture {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	userID := "user-invitation-owner"
 	eventID := "event-invitation-domain"
-	_, err := db.ExecContext(context.Background(), `INSERT INTO organizers (
-		id, email, name, timezone, is_admin, created_at, updated_at
-	) VALUES (?, ?, ?, 'UTC', 0, ?, ?)`, userID, "owner@example.com", "Owner", now, now)
-	require.NoError(t, err)
-	_, err = db.ExecContext(context.Background(), `INSERT INTO users (
-		id, email, normalized_email, display_name, timezone, instance_role,
-		status, activated_at, created_at, updated_at
-	) VALUES (?, ?, ?, ?, 'UTC', 'user', 'active', ?, ?, ?)`, userID,
-		"owner@example.com", "owner@example.com", "Owner", now, now, now)
-	require.NoError(t, err)
+	testutil.SeedUser(t, db, userID, "owner@example.com", "Owner")
+	var err error
 	_, err = db.ExecContext(context.Background(), `INSERT INTO events (
-		id, organizer_id, title, description, event_date, location, timezone,
+		id, title, description, event_date, location, timezone,
 		retention_days, status, share_token, created_at, updated_at
-	) VALUES (?, ?, 'Invitation Test', '', ?, '', 'UTC', 30, 'published', ?, ?, ?)`,
-		eventID, userID, time.Now().UTC().Add(24*time.Hour).Format(time.RFC3339),
+	) VALUES (?, 'Invitation Test', '', ?, '', 'UTC', 30, 'published', ?, ?, ?)`,
+		eventID, time.Now().UTC().Add(24*time.Hour).Format(time.RFC3339),
 		"legacy-share-invitation-test", now, now)
 	require.NoError(t, err)
 	_, err = db.ExecContext(context.Background(), `INSERT INTO event_memberships (

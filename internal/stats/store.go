@@ -124,7 +124,7 @@ func (s *Store) loadAttendeeStats(ctx context.Context, out *AttendeeStats) error
 
 func (s *Store) loadOrganizerStats(ctx context.Context, out *OrganizerStats) error {
 	return s.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM organizers",
+		"SELECT COUNT(*) FROM users",
 	).Scan(&out.Total)
 }
 

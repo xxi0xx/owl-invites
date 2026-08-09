@@ -10,30 +10,31 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/testutil"
 )
+
+func seedCleanupEvent(t *testing.T, db database.DB, userID, email, eventID, title, eventDate, shareToken string) {
+	t.Helper()
+	testutil.SeedUser(t, db, userID, email, "Test Owner")
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO events (id, title, event_date, retention_days, status, share_token, created_at, updated_at)
+		 VALUES (?, ?, ?, 30, 'published', ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+		eventID, title, eventDate, shareToken)
+	require.NoError(t, err)
+	testutil.SeedEventOwner(t, db, eventID, userID)
+}
 
 func TestCleanupJobWarnExpiringNotifiesOrganizer(t *testing.T) {
 	db := testutil.NewTestDB(t)
 	logger := zerolog.Nop()
 
-	// Create an organizer.
 	orgID := "org-cleanup-test-1"
 	orgEmail := "organizer@test.com"
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO organizers (id, email, name, created_at, updated_at)
-		 VALUES (?, ?, 'Test Org', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-		orgID, orgEmail)
-	require.NoError(t, err)
-
 	// Create an event that expires within 7 days (event_date 25 days ago, retention 30 days → expires in 5 days).
 	eventID := "evt-cleanup-test-1"
 	eventDate := time.Now().UTC().AddDate(0, 0, -25).Format(time.RFC3339)
-	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO events (id, organizer_id, title, event_date, retention_days, status, share_token, created_at, updated_at)
-		 VALUES (?, ?, 'Expiring Party', ?, 30, 'published', 'abc12345', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-		eventID, orgID, eventDate)
-	require.NoError(t, err)
+	seedCleanupEvent(t, db, orgID, orgEmail, eventID, "Expiring Party", eventDate, "abc12345")
 
 	// Track notification calls.
 	var mu sync.Mutex
@@ -49,7 +50,7 @@ func TestCleanupJobWarnExpiringNotifiesOrganizer(t *testing.T) {
 		notifiedExpiresAt = expiresAt
 	})
 
-	err = job.Run(context.Background())
+	err := job.Run(context.Background())
 	require.NoError(t, err)
 
 	mu.Lock()
@@ -71,18 +72,9 @@ func TestCleanupJobWarnExpiringSkipsAlreadyWarned(t *testing.T) {
 	logger := zerolog.Nop()
 
 	orgID := "org-cleanup-test-2"
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO organizers (id, email, name, created_at, updated_at)
-		 VALUES (?, 'org2@test.com', 'Test Org 2', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, orgID)
-	require.NoError(t, err)
-
 	// Create an event within the warning window.
 	eventDate := time.Now().UTC().AddDate(0, 0, -25).Format(time.RFC3339)
-	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO events (id, organizer_id, title, event_date, retention_days, status, share_token, created_at, updated_at)
-		 VALUES ('evt-already-warned', ?, 'Already Warned', ?, 30, 'published', 'xyz12345', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-		orgID, eventDate)
-	require.NoError(t, err)
+	seedCleanupEvent(t, db, orgID, "org2@test.com", "evt-already-warned", "Already Warned", eventDate, "xyz12345")
 
 	notifyCount := 0
 	job := NewCleanupJob(db, logger)
@@ -91,7 +83,7 @@ func TestCleanupJobWarnExpiringSkipsAlreadyWarned(t *testing.T) {
 	})
 
 	// First run should warn.
-	err = job.Run(context.Background())
+	err := job.Run(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, 1, notifyCount, "first run should trigger notification")
 
@@ -106,18 +98,9 @@ func TestCleanupJobWarnExpiringSkipsNotYetExpiring(t *testing.T) {
 	logger := zerolog.Nop()
 
 	orgID := "org-cleanup-test-3"
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO organizers (id, email, name, created_at, updated_at)
-		 VALUES (?, 'org3@test.com', 'Test Org 3', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, orgID)
-	require.NoError(t, err)
-
 	// Create an event that expires in 20 days (well beyond 7-day warning threshold).
 	eventDate := time.Now().UTC().AddDate(0, 0, -10).Format(time.RFC3339)
-	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO events (id, organizer_id, title, event_date, retention_days, status, share_token, created_at, updated_at)
-		 VALUES ('evt-not-expiring', ?, 'Far Future', ?, 30, 'published', 'far12345', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-		orgID, eventDate)
-	require.NoError(t, err)
+	seedCleanupEvent(t, db, orgID, "org3@test.com", "evt-not-expiring", "Far Future", eventDate, "far12345")
 
 	notifyCalled := false
 	job := NewCleanupJob(db, logger)
@@ -125,7 +108,7 @@ func TestCleanupJobWarnExpiringSkipsNotYetExpiring(t *testing.T) {
 		notifyCalled = true
 	})
 
-	err = job.Run(context.Background())
+	err := job.Run(context.Background())
 	require.NoError(t, err)
 	assert.False(t, notifyCalled, "event far from expiry should not trigger notification")
 }
@@ -135,21 +118,12 @@ func TestCleanupJobDeleteExpired(t *testing.T) {
 	logger := zerolog.Nop()
 
 	orgID := "org-cleanup-test-4"
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO organizers (id, email, name, created_at, updated_at)
-		 VALUES (?, 'org4@test.com', 'Test Org 4', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, orgID)
-	require.NoError(t, err)
-
 	// Create an event that has already expired (event_date 40 days ago, retention 30 days).
 	eventDate := time.Now().UTC().AddDate(0, 0, -40).Format(time.RFC3339)
-	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO events (id, organizer_id, title, event_date, retention_days, status, share_token, created_at, updated_at)
-		 VALUES ('evt-expired', ?, 'Expired Party', ?, 30, 'published', 'exp12345', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-		orgID, eventDate)
-	require.NoError(t, err)
+	seedCleanupEvent(t, db, orgID, "org4@test.com", "evt-expired", "Expired Party", eventDate, "exp12345")
 
 	job := NewCleanupJob(db, logger)
-	err = job.Run(context.Background())
+	err := job.Run(context.Background())
 	require.NoError(t, err)
 
 	// Verify event is deleted.
@@ -165,21 +139,12 @@ func TestCleanupJobNoNotifyWithoutCallback(t *testing.T) {
 	logger := zerolog.Nop()
 
 	orgID := "org-cleanup-test-5"
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO organizers (id, email, name, created_at, updated_at)
-		 VALUES (?, 'org5@test.com', 'Test Org 5', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`, orgID)
-	require.NoError(t, err)
-
 	// Create an event within the warning window.
 	eventDate := time.Now().UTC().AddDate(0, 0, -25).Format(time.RFC3339)
-	_, err = db.ExecContext(context.Background(),
-		`INSERT INTO events (id, organizer_id, title, event_date, retention_days, status, share_token, created_at, updated_at)
-		 VALUES ('evt-no-callback', ?, 'No Callback', ?, 30, 'published', 'ncb12345', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-		orgID, eventDate)
-	require.NoError(t, err)
+	seedCleanupEvent(t, db, orgID, "org5@test.com", "evt-no-callback", "No Callback", eventDate, "ncb12345")
 
 	job := NewCleanupJob(db, logger)
 	// No SetRetentionNotify called — should not panic.
-	err = job.Run(context.Background())
+	err := job.Run(context.Background())
 	require.NoError(t, err, "should not panic without notification callback")
 }

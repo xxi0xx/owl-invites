@@ -35,12 +35,7 @@ func TestGetInstanceStats_WithData(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	// Seed organizer.
-	_, err := db.ExecContext(ctx,
-		"INSERT INTO organizers (id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		"org-1", "admin@test.com", "Admin", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z",
-	)
-	require.NoError(t, err)
+	testutil.SeedUser(t, db, "org-1", "admin@test.com", "Admin")
 
 	// Seed events.
 	for _, ev := range []struct {
@@ -53,11 +48,12 @@ func TestGetInstanceStats_WithData(t *testing.T) {
 		{"ev-4", "cancelled"},
 	} {
 		_, err := db.ExecContext(ctx,
-			`INSERT INTO events (id, organizer_id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
-			VALUES (?, ?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', ?, ?, 30, 'email', 0, 0, 0, 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-			ev.id, "org-1", "Event "+ev.id, ev.status, "share-"+ev.id,
+			`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
+			VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', ?, ?, 30, 'email', 0, 0, 0, 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+			ev.id, "Event "+ev.id, ev.status, "share-"+ev.id,
 		)
 		require.NoError(t, err)
+		testutil.SeedEventOwner(t, db, ev.id, "org-1")
 	}
 
 	// Seed attendees.
@@ -110,38 +106,31 @@ func TestGetInstanceStats_FeatureAdoption(t *testing.T) {
 	store := NewStore(db)
 	ctx := context.Background()
 
-	// Seed organizer.
-	_, err := db.ExecContext(ctx,
-		"INSERT INTO organizers (id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		"org-1", "admin@test.com", "Admin", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z",
-	)
-	require.NoError(t, err)
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO users (id, email, normalized_email, display_name, timezone, instance_role, status, activated_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, 'UTC', 'user', 'active', ?, ?, ?)`,
-		"org-1", "admin@test.com", "admin@test.com", "Admin", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z")
-	require.NoError(t, err)
+	testutil.SeedUser(t, db, "org-1", "admin@test.com", "Admin")
+	testutil.SeedUser(t, db, "cohost-1", "cohost@test.com", "Co-host")
 
 	// Event with waitlist enabled.
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
-		VALUES (?, ?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-1', 30, 'email', 0, 0, 1, 1, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"ev-1", "org-1", "Event 1",
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
+		VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-1', 30, 'email', 0, 0, 1, 1, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+		"ev-1", "Event 1",
 	)
 	require.NoError(t, err)
+	testutil.SeedEventOwner(t, db, "ev-1", "org-1")
 
 	// Event with capacity.
 	_, err = db.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, max_capacity, created_at, updated_at)
-		VALUES (?, ?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-2', 30, 'email', 0, 0, 0, 0, 100, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"ev-2", "org-1", "Event 2",
+		`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, max_capacity, created_at, updated_at)
+		VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-2', 30, 'email', 0, 0, 0, 0, 100, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+		"ev-2", "Event 2",
 	)
 	require.NoError(t, err)
+	testutil.SeedEventOwner(t, db, "ev-2", "org-1")
 
 	// Add a co-host.
 	_, err = db.ExecContext(ctx,
 		"INSERT INTO event_memberships (id, event_id, user_id, role, granted_by_user_id, created_at, updated_at) VALUES (?, ?, ?, 'cohost', ?, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')",
-		"ch-1", "ev-1", "org-1", "org-1",
+		"ch-1", "ev-1", "cohost-1", "org-1",
 	)
 	require.NoError(t, err)
 
@@ -169,17 +158,14 @@ func TestGetInstanceStats_NotificationStats(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed required parent records.
+	testutil.SeedUser(t, db, "org-1", "admin@test.com", "Admin")
 	_, err := db.ExecContext(ctx,
-		"INSERT INTO organizers (id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		"org-1", "admin@test.com", "Admin", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z",
+		`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
+		VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-1', 30, 'email', 0, 0, 0, 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+		"ev-1", "Event 1",
 	)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
-		VALUES (?, ?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-1', 30, 'email', 0, 0, 0, 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"ev-1", "org-1", "Event 1",
-	)
-	require.NoError(t, err)
+	testutil.SeedEventOwner(t, db, "ev-1", "org-1")
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO attendees (id, event_id, name, rsvp_status, rsvp_token, contact_method, dietary_notes, plus_ones, created_at, updated_at)
 		VALUES (?, ?, 'Guest', 'attending', 'token-1', 'email', '', 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,

@@ -1,7 +1,8 @@
 # Gate 2: invitation domain and RSVP security boundary
 
-Status: implementation branch. This document records the invariants that must
-hold before the legacy RSVP and Gate 1 compatibility structures are removed.
+Status: implementation branch. Migration 34 establishes the invitation
+security boundary and performs the one-way legacy RSVP mapping. Migration 35
+removes the Gate 1 identity and event-ownership shadows after enforcing parity.
 
 ## Domain invariants
 
@@ -86,11 +87,14 @@ contact fields.
 
 ## Compatibility-shadow removal criteria
 
-`organizers` and `events.organizer_id` are removed only after authentication,
+Migration 35 removes `organizers` and `events.organizer_id`. Authentication,
 profile management, ownership transfer, event series, notifications, exports,
-retention, and tests read from `users` / `event_memberships`; dual-writes have
-stopped; owner parity assertions pass; and both SQLite and PostgreSQL migration
-tests pass. They are Gate 2 transition scaffolding, not permanent models.
+retention, administration, statistics, and tests now use `users` and
+`event_memberships`; all dual-writes have stopped. The migration aborts before
+mutation unless organizer/user identity parity and exactly-one-owner event
+parity hold. Its pre-upgrade test runs unchanged on SQLite and PostgreSQL and
+also verifies preservation of authentication rows, series links, and migrated
+invitation children.
 
 `attendees`, `attendee_answers`, `plus_ones`, `rsvp_token`, and `share_token`
 are removed only after the one-way migration assertions pass and all mounted
@@ -113,4 +117,3 @@ supported compatibility API.
 | Invitation session | its invitation only | its invitation only | not applicable | none |
 | Recovery capability | exchange once for its invitation | no direct read | atomic single use | none |
 | Open enrollment capability | no event administration | cannot read any existing invitation | none | create a new isolated invitation only |
-

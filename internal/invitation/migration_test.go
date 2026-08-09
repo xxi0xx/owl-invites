@@ -22,10 +22,11 @@ func TestLegacyAttendeeMigrationCreatesOneInvitationAndNoPlaceholderGuests(t *te
 	ownerID := "legacy-owner"
 	eventID := "legacy-event"
 	attendeeID := "legacy-attendee"
+	seriesID := "legacy-series"
 
 	_, err := db.ExecContext(ctx, `INSERT INTO organizers (
 		id, email, name, timezone, is_admin, created_at, updated_at
-	) VALUES (?, 'owner@example.com', 'Owner', 'UTC', 0, ?, ?)`, ownerID, now, now)
+	) VALUES (?, 'owner@example.com', 'Owner', 'UTC', ?, ?, ?)`, ownerID, false, now, now)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO users (
 		id, email, normalized_email, display_name, timezone, instance_role,
@@ -33,12 +34,26 @@ func TestLegacyAttendeeMigrationCreatesOneInvitationAndNoPlaceholderGuests(t *te
 	) VALUES (?, 'owner@example.com', 'owner@example.com', 'Owner', 'UTC',
 		'user', 'active', ?, ?, ?)`, ownerID, now, now, now)
 	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO magic_links (
+		id, token_hash, organizer_id, expires_at, created_at
+	) VALUES ('legacy-magic-link', 'legacy-magic-hash', ?, ?, ?)`, ownerID,
+		time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), now)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO sessions (
+		id, token_hash, organizer_id, expires_at, created_at
+	) VALUES ('legacy-session', 'legacy-session-hash', ?, ?, ?)`, ownerID,
+		time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), now)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO event_series (
+		id, organizer_id, title, event_time, recurrence_rule, created_at, updated_at
+	) VALUES (?, ?, 'Legacy Series', '18:00', 'weekly', ?, ?)`, seriesID, ownerID, now, now)
+	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO events (
 		id, organizer_id, title, description, event_date, location, timezone,
-		retention_days, status, share_token, created_at, updated_at
+		retention_days, status, share_token, series_id, created_at, updated_at
 	) VALUES (?, ?, 'Legacy Event', '', ?, '', 'UTC', 30, 'published',
-		'legacy-share-token', ?, ?)`, eventID, ownerID,
-		time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), now, now)
+		'legacy-share-token', ?, ?, ?)`, eventID, ownerID,
+		time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), seriesID, now, now)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO event_memberships (
 		id, event_id, user_id, role, granted_by_user_id, created_at, updated_at
@@ -63,6 +78,19 @@ func TestLegacyAttendeeMigrationCreatesOneInvitationAndNoPlaceholderGuests(t *te
 
 	require.NoError(t, database.RunMigrations(db))
 
+	var migratedUserID string
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT user_id FROM magic_links WHERE id = 'legacy-magic-link'").Scan(&migratedUserID))
+	assert.Equal(t, ownerID, migratedUserID)
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT user_id FROM sessions WHERE id = 'legacy-session'").Scan(&migratedUserID))
+	assert.Equal(t, ownerID, migratedUserID)
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT owner_user_id FROM event_series WHERE id = ?", seriesID).Scan(&migratedUserID))
+	assert.Equal(t, ownerID, migratedUserID)
+	var migratedSeriesID string
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT series_id FROM events WHERE id = ?", eventID).Scan(&migratedSeriesID))
+	assert.Equal(t, seriesID, migratedSeriesID)
+	assert.Error(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM organizers").Scan(new(int)), "organizers shadow must be removed")
+	assert.Error(t, db.QueryRowContext(ctx, "SELECT organizer_id FROM events LIMIT 1").Scan(new(string)), "events.organizer_id shadow must be removed")
+
 	store := NewStore(db)
 	household, err := store.LoadHousehold(ctx, "legacy-invitation:"+attendeeID)
 	require.NoError(t, err)
@@ -78,4 +106,42 @@ func TestLegacyAttendeeMigrationCreatesOneInvitationAndNoPlaceholderGuests(t *te
 	assert.Equal(t, "Vegetarian", household.GuestAnswers[0].Answer)
 	require.Len(t, household.Questions, 1)
 	assert.Equal(t, QuestionScopeGuest, household.Questions[0].Scope)
+}
+
+func TestIdentityShadowRemovalRejectsOwnerParityMismatch(t *testing.T) {
+	db := testutil.NewTestDBAtVersion(t, 33)
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	for _, user := range []struct {
+		id, email string
+	}{{"parity-user-a", "a@example.com"}, {"parity-user-b", "b@example.com"}} {
+		_, err := db.ExecContext(ctx, `INSERT INTO organizers (
+			id, email, name, timezone, is_admin, created_at, updated_at
+		) VALUES (?, ?, '', 'UTC', ?, ?, ?)`, user.id, user.email, false, now, now)
+		require.NoError(t, err)
+		_, err = db.ExecContext(ctx, `INSERT INTO users (
+			id, email, normalized_email, display_name, timezone, instance_role,
+			status, activated_at, created_at, updated_at
+		) VALUES (?, ?, ?, '', 'UTC', 'user', 'active', ?, ?, ?)`, user.id,
+			user.email, user.email, now, now, now)
+		require.NoError(t, err)
+	}
+
+	_, err := db.ExecContext(ctx, `INSERT INTO events (
+		id, organizer_id, title, event_date, status, share_token, created_at, updated_at
+	) VALUES ('parity-event', 'parity-user-a', 'Parity Event', ?, 'draft',
+		'parity-share', ?, ?)`, now, now, now)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO event_memberships (
+		id, event_id, user_id, role, granted_by_user_id, created_at, updated_at
+	) VALUES ('parity-owner', 'parity-event', 'parity-user-b', 'owner',
+		'parity-user-b', ?, ?)`, now, now)
+	require.NoError(t, err)
+
+	err = database.RunMigrations(db)
+	require.Error(t, err)
+	var organizers int
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM organizers").Scan(&organizers))
+	assert.Equal(t, 2, organizers, "guard must fail before removing compatibility data")
 }

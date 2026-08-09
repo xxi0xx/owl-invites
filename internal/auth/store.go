@@ -88,9 +88,7 @@ func (s *Store) CreateOrganizer(ctx context.Context, email string) (*Organizer, 
 	return user, nil
 }
 
-// CreateUserTx creates a persistent user and its temporary legacy organizer
-// shadow in one transaction. The shadow is required only until event foreign
-// keys are migrated to users in the membership slice.
+// CreateUserTx creates a persistent Owl Invites user in a caller-owned transaction.
 func (s *Store) CreateUserTx(ctx context.Context, tx database.Tx, email, name, timezone, role, status string, invitedBy *string) (*User, error) {
 	return createUser(ctx, tx, email, name, timezone, role, status, invitedBy)
 }
@@ -118,14 +116,6 @@ func createUser(ctx context.Context, exec executor, email, name, timezone, role,
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	_, err = exec.ExecContext(ctx,
-		"INSERT INTO organizers (id, email, name, timezone, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		id, email, name, timezone, role == InstanceRoleAdmin, now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create organizer compatibility row: %w", err)
-	}
-
 	return findOrganizerByID(ctx, exec, id)
 }
 
@@ -133,25 +123,11 @@ func createUser(ctx context.Context, exec executor, email, name, timezone, role,
 func (s *Store) UpdateOrganizer(ctx context.Context, organizer *Organizer) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin update user: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	_, err = tx.ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		"UPDATE users SET display_name = ?, timezone = ?, updated_at = ? WHERE id = ?",
 		organizer.Name, organizer.Timezone, now, organizer.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx,
-		"UPDATE organizers SET name = ?, timezone = ?, updated_at = ? WHERE id = ?",
-		organizer.Name, organizer.Timezone, now, organizer.ID); err != nil {
-		return fmt.Errorf("update organizer compatibility row: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit update user: %w", err)
 	}
 	return nil
 }
@@ -163,7 +139,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, tokenHash, organizerID stri
 	exp := expiresAt.UTC().Format(time.RFC3339)
 
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO magic_links (id, token_hash, organizer_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+		"INSERT INTO magic_links (id, token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
 		id, tokenHash, organizerID, exp, now,
 	)
 	if err != nil {
@@ -176,7 +152,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, tokenHash, organizerID stri
 // FindMagicLinkByHash retrieves a magic link by its token hash.
 func (s *Store) FindMagicLinkByHash(ctx context.Context, tokenHash string) (*MagicLink, error) {
 	row := s.db.QueryRowContext(ctx,
-		"SELECT id, token_hash, organizer_id, expires_at, used_at, created_at FROM magic_links WHERE token_hash = ?",
+		"SELECT id, token_hash, user_id, expires_at, used_at, created_at FROM magic_links WHERE token_hash = ?",
 		tokenHash,
 	)
 
@@ -262,7 +238,7 @@ func createSession(ctx context.Context, exec executor, tokenHash, organizerID st
 	exp := expiresAt.UTC().Format(time.RFC3339)
 
 	_, err := exec.ExecContext(ctx,
-		"INSERT INTO sessions (id, token_hash, organizer_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+		"INSERT INTO sessions (id, token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
 		id, tokenHash, organizerID, exp, now,
 	)
 	if err != nil {
@@ -281,7 +257,7 @@ func createSession(ctx context.Context, exec executor, tokenHash, organizerID st
 // FindSessionByHash retrieves a session by its token hash.
 func (s *Store) FindSessionByHash(ctx context.Context, tokenHash string) (*Session, error) {
 	row := s.db.QueryRowContext(ctx,
-		"SELECT id, token_hash, organizer_id, expires_at, created_at FROM sessions WHERE token_hash = ?",
+		"SELECT id, token_hash, user_id, expires_at, created_at FROM sessions WHERE token_hash = ?",
 		tokenHash,
 	)
 
@@ -344,20 +320,8 @@ func (s *Store) SetAdminStatus(ctx context.Context, id string, isAdmin bool) err
 	if isAdmin {
 		role = InstanceRoleAdmin
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin set admin status: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, "UPDATE users SET instance_role = ?, updated_at = ? WHERE id = ?", role, time.Now().UTC().Format(time.RFC3339), id); err != nil {
+	if _, err := s.db.ExecContext(ctx, "UPDATE users SET instance_role = ?, updated_at = ? WHERE id = ?", role, time.Now().UTC().Format(time.RFC3339), id); err != nil {
 		return fmt.Errorf("set user role: %w", err)
-	}
-	_, err = tx.ExecContext(ctx, "UPDATE organizers SET is_admin = ? WHERE id = ?", isAdmin, id)
-	if err != nil {
-		return fmt.Errorf("set organizer compatibility role: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit set admin status: %w", err)
 	}
 	return nil
 }
@@ -399,10 +363,6 @@ func (s *Store) PromoteBootstrapAdminTx(ctx context.Context, tx database.Tx, id,
 	affected, err := result.RowsAffected()
 	if err != nil || affected != 1 {
 		return nil, fmt.Errorf("promote bootstrap admin: user not found")
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE organizers SET name = ?, timezone = ?,
-		is_admin = ?, updated_at = ? WHERE id = ?`, name, timezone, true, now, id); err != nil {
-		return nil, fmt.Errorf("promote organizer compatibility row: %w", err)
 	}
 	return findOrganizerByID(ctx, tx, id)
 }
@@ -460,7 +420,7 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 	}
 
 	doc.Series, err = queryRowsByOrganizer(ctx, s.db,
-		"SELECT * FROM event_series WHERE organizer_id = ? ORDER BY created_at", organizerID)
+		"SELECT * FROM event_series WHERE owner_user_id = ? ORDER BY created_at", organizerID)
 	if err != nil {
 		return nil, fmt.Errorf("export series: %w", err)
 	}
@@ -541,14 +501,13 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		) WHERE granted_by_user_id = ? AND user_id != ?`, []any{organizerID, organizerID}},
 		// event series owned by the organizer (events.series_id is ON DELETE
 		// SET NULL, and the events are already gone above).
-		{"DELETE FROM event_series WHERE organizer_id = ?", []any{organizerID}},
+		{"DELETE FROM event_series WHERE owner_user_id = ?", []any{organizerID}},
 		// auth records tied directly to the organizer
-		{"DELETE FROM magic_links WHERE organizer_id = ?", []any{organizerID}},
-		{"DELETE FROM sessions WHERE organizer_id = ?", []any{organizerID}},
+		{"DELETE FROM magic_links WHERE user_id = ?", []any{organizerID}},
+		{"DELETE FROM sessions WHERE user_id = ?", []any{organizerID}},
 		{"DELETE FROM account_invites WHERE target_user_id = ? OR invited_by_user_id = ?", []any{organizerID, organizerID}},
 		{"UPDATE users SET invited_by_user_id = NULL WHERE invited_by_user_id = ?", []any{organizerID}},
-		// finally the organizer row itself
-		{"DELETE FROM organizers WHERE id = ?", []any{organizerID}},
+		// finally the persistent user identity
 		{"DELETE FROM users WHERE id = ?", []any{organizerID}},
 	}
 

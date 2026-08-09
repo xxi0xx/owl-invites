@@ -21,15 +21,13 @@ func createParentRecordsForNotification(t *testing.T, ctx context.Context, db da
 	now := time.Now().UTC().Format(time.RFC3339)
 	orgID := uuid.Must(uuid.NewV7()).String()
 
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO organizers (id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		orgID, "test-"+orgID[:8]+"@example.com", "Test Organizer", now, now)
-	require.NoError(t, err)
+	testutil.SeedUser(t, db, orgID, "test-"+orgID[:8]+"@example.com", "Test Organizer")
 
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, event_date, status, share_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, orgID, "Test Event", "2026-06-15T14:00:00Z", "published", "share-"+eventID[:8], now, now)
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO events (id, title, event_date, status, share_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		eventID, "Test Event", "2026-06-15T14:00:00Z", "published", "share-"+eventID[:8], now, now)
 	require.NoError(t, err)
+	testutil.SeedEventOwner(t, db, eventID, orgID)
 
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO attendees (id, event_id, name, rsvp_status, rsvp_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,

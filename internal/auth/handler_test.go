@@ -27,9 +27,9 @@ func seedEventWithAttendee(t *testing.T, db database.DB, organizerID, title, sha
 
 	eventID := "evt-" + shareToken
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, event_date, status, share_token, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, 'published', ?, ?, ?)`,
-		eventID, organizerID, title, now, shareToken, now, now)
+		`INSERT INTO events (id, title, event_date, status, share_token, created_at, updated_at)
+		 VALUES (?, ?, ?, 'published', ?, ?, ?)`,
+		eventID, title, now, shareToken, now, now)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO event_memberships (id, event_id, user_id, role, granted_by_user_id, created_at, updated_at)
@@ -163,15 +163,15 @@ func TestHandleDeleteMe_Success(t *testing.T) {
 	gone, err := env.store.FindOrganizerByID(ctx, org.ID)
 	require.NoError(t, err)
 	assert.Nil(t, gone)
-	assert.Equal(t, 0, countRows(t, env.db, "SELECT COUNT(*) FROM events WHERE organizer_id = ?", org.ID))
+	assert.Equal(t, 0, countRows(t, env.db, "SELECT COUNT(*) FROM event_memberships WHERE user_id = ? AND role = 'owner'", org.ID))
 	assert.Equal(t, 0, countRows(t, env.db, "SELECT COUNT(*) FROM attendees WHERE event_id = ?", "evt-share-d"))
-	assert.Equal(t, 0, countRows(t, env.db, "SELECT COUNT(*) FROM sessions WHERE organizer_id = ?", org.ID))
+	assert.Equal(t, 0, countRows(t, env.db, "SELECT COUNT(*) FROM sessions WHERE user_id = ?", org.ID))
 
 	// The other organizer's data is untouched.
 	survivor, err := env.store.FindOrganizerByID(ctx, other.ID)
 	require.NoError(t, err)
 	require.NotNil(t, survivor)
-	assert.Equal(t, 1, countRows(t, env.db, "SELECT COUNT(*) FROM events WHERE organizer_id = ?", other.ID))
+	assert.Equal(t, 1, countRows(t, env.db, "SELECT COUNT(*) FROM event_memberships WHERE user_id = ? AND role = 'owner'", other.ID))
 	assert.Equal(t, 1, countRows(t, env.db, "SELECT COUNT(*) FROM attendees WHERE event_id = ?", "evt-share-e"))
 }
 

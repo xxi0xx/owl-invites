@@ -15,7 +15,7 @@
 	onMount(async () => {
 		$eventsLoading = true;
 		try {
-			const result = await api.get<{ data: Event[] }>('/events');
+			const result = await api.operation('listEvents');
 			$events = result.data;
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };

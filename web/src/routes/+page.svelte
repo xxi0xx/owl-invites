@@ -1,5 +1,33 @@
 <script lang="ts">
-	import { isAuthenticated } from '$lib/stores/auth';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { api } from '$lib/api/client';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import { currentUser, isAuthenticated } from '$lib/stores/auth';
+
+	let resolvingDestination = $state(true);
+
+	onMount(async () => {
+		try {
+			const status = await api.operation('getSetupStatus');
+			if (status.setupRequired) {
+				await goto('/setup', { replaceState: true });
+				return;
+			}
+		} catch {
+			// If setup status is temporarily unavailable, keep the public landing page usable.
+		}
+
+		try {
+			$currentUser = await api.operation('getCurrentUser');
+			await goto('/events', { replaceState: true });
+			return;
+		} catch {
+			// Anonymous visitors remain on the public landing page.
+		} finally {
+			resolvingDestination = false;
+		}
+	});
 </script>
 
 <svelte:head>
@@ -7,6 +35,11 @@
 	<meta name="description" content="Create stunning event invitations and manage RSVPs. Self-hosted, privacy-first, and completely free. No ads, no tracking." />
 </svelte:head>
 
+{#if resolvingDestination}
+	<div class="flex min-h-screen items-center justify-center bg-neutral-50" aria-label="Loading destination">
+		<Spinner size="lg" class="text-primary" />
+	</div>
+{:else}
 <div class="min-h-screen bg-surface">
 	<!-- Navbar -->
 	<header class="fixed top-0 left-0 right-0 z-50 bg-surface/80 backdrop-blur-lg border-b border-neutral-100">
@@ -313,3 +346,4 @@
 		</div>
 	</footer>
 </div>
+{/if}

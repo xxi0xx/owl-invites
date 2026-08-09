@@ -113,7 +113,7 @@
       },
       "Event": {
         "type": "object",
-        "required": ["id", "organizerId", "title", "description", "eventDate", "location", "timezone", "retentionDays", "status", "shareToken", "createdAt", "updatedAt"],
+        "required": ["id", "organizerId", "title", "description", "eventDate", "location", "timezone", "retentionDays", "status", "shareToken", "contactRequirement", "showHeadcount", "showGuestList", "waitlistEnabled", "commentsEnabled", "seriesOverride", "createdAt", "updatedAt"],
         "properties": {
           "id": { "type": "string", "format": "uuid" },
           "organizerId": { "type": "string", "format": "uuid", "deprecated": true },
@@ -126,6 +126,16 @@
           "retentionDays": { "type": "integer" },
           "status": { "type": "string", "enum": ["draft", "published", "cancelled", "archived"] },
           "shareToken": { "type": "string" },
+          "contactRequirement": { "type": "string", "enum": ["email", "phone", "email_or_phone", "email_and_phone"] },
+          "showHeadcount": { "type": "boolean" },
+          "showGuestList": { "type": "boolean" },
+          "rsvpDeadline": { "type": "string", "format": "date-time" },
+          "maxCapacity": { "type": "integer" },
+          "waitlistEnabled": { "type": "boolean" },
+          "commentsEnabled": { "type": "boolean" },
+          "seriesId": { "type": "string", "format": "uuid" },
+          "seriesIndex": { "type": "integer" },
+          "seriesOverride": { "type": "boolean" },
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" }
         }

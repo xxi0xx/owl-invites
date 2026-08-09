@@ -87,6 +87,16 @@ export type Event = {
 	"retentionDays": number;
 	"status": "draft" | "published" | "cancelled" | "archived";
 	"shareToken": string;
+	"contactRequirement": "email" | "phone" | "email_or_phone" | "email_and_phone";
+	"showHeadcount": boolean;
+	"showGuestList": boolean;
+	"rsvpDeadline"?: string;
+	"maxCapacity"?: number;
+	"waitlistEnabled": boolean;
+	"commentsEnabled": boolean;
+	"seriesId"?: string;
+	"seriesIndex"?: number;
+	"seriesOverride": boolean;
 	"createdAt": string;
 	"updatedAt": string;
 };

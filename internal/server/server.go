@@ -18,6 +18,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/event"
+	"github.com/yannkr/openrsvp/internal/eventadmin"
 	"github.com/yannkr/openrsvp/internal/feedback"
 	"github.com/yannkr/openrsvp/internal/instanceconfig"
 	"github.com/yannkr/openrsvp/internal/invite"
@@ -30,6 +31,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/security"
 	"github.com/yannkr/openrsvp/internal/stats"
 	"github.com/yannkr/openrsvp/internal/suppression"
+	"github.com/yannkr/openrsvp/internal/useradmin"
 	"github.com/yannkr/openrsvp/internal/webhook"
 )
 
@@ -55,6 +57,8 @@ type Server struct {
 	statsHandler          *stats.Handler
 	suppressionHandler    *suppression.Handler
 	instanceConfigHandler *instanceconfig.Handler
+	userAdminHandler      *useradmin.Handler
+	eventAdminHandler     *eventadmin.Handler
 	scheduler             *scheduler.Scheduler
 	securityMw            *security.Middleware
 	uploadsDir            string
@@ -131,6 +135,9 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			return "", "", err
 		}
 		if org == nil {
+			return "", "", nil
+		}
+		if org.Status != auth.UserStatusActive {
 			return "", "", nil
 		}
 		return org.ID, org.Name, nil
@@ -555,10 +562,11 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			"/api/v1/rsvp/public/",
 			"/api/v1/auth/magic-link",
 			"/api/v1/auth/verify",
+			"/api/v1/auth/account-invites/accept", // one-time account capability
+			"/api/v1/setup/bootstrap",             // one-time env-token-authorized setup
 			"/api/v1/comments/public/",
-			"/api/v1/feedback/public",         // unauthenticated guest bug reports
-			"/api/v1/unsubscribe",             // token-based email opt-out (no session)
-			"/api/v1/notifications/webhooks/", // inbound SendGrid/SES delivery events
+			"/api/v1/feedback/public", // unauthenticated guest bug reports
+			"/api/v1/unsubscribe",     // token-based email opt-out (no session)
 		},
 		IsProduction: cfg.Env == "production",
 	})
@@ -916,15 +924,41 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	adminMiddleware := auth.RequireAdmin()
 	statsHandler := stats.NewHandler(statsService, authMiddleware, adminMiddleware, logger)
 
+	// Persistent user administration and account invitations. Invitation
+	// capabilities are delivered only through the configured email provider.
+	userAdminStore := useradmin.NewStore(db)
+	userAdminService := useradmin.NewService(userAdminStore, authStore, cfg, logger)
+	if notifRegistry.Has(notification.ChannelEmail) {
+		userAdminService.SetEmailSender(func(ctx context.Context, to, subject, htmlBody, plainBody string) error {
+			provider, err := notifRegistry.Get(notification.ChannelEmail)
+			if err != nil {
+				return err
+			}
+			_, sendErr := provider.Send(ctx, &notification.Message{To: to, Subject: subject, Body: htmlBody, Plain: plainBody})
+			return sendErr
+		})
+	}
+	userAdminHandler := useradmin.NewHandler(userAdminService, cfg, authMiddleware, adminMiddleware, logger)
+	eventHandler.SetCoHostSponsor(func(ctx context.Context, ownerUserID, eventID, email string) (bool, error) {
+		owner, err := authStore.FindOrganizerByID(ctx, ownerUserID)
+		if err != nil || owner == nil {
+			return false, err
+		}
+		return userAdminService.InviteEventCohost(ctx, owner, eventID, email)
+	})
+
 	// Wire up instance setup/config layer. DB-backed non-secret overrides
 	// (instance name, default timezone, signups, support email) are overlaid
 	// on top of the env-derived config at startup.
 	instanceConfigStore := instanceconfig.NewStore(db)
 	instanceConfigService := instanceconfig.NewService(instanceConfigStore)
+	bootstrapService := instanceconfig.NewBootstrapService(instanceConfigStore, authStore, cfg)
 	if overrides, err := instanceConfigStore.GetAll(context.Background()); err == nil {
 		cfg.ApplyInstanceOverrides(overrides)
 	}
-	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, authMiddleware, adminMiddleware, logger)
+	instanceConfigHandler := instanceconfig.NewHandler(instanceConfigService, bootstrapService, cfg, authMiddleware, adminMiddleware, logger)
+	eventAdminService := eventadmin.NewService(db, authStore, instanceConfigStore)
+	eventAdminHandler := eventadmin.NewHandler(eventAdminService, authMiddleware, adminMiddleware)
 
 	s := &Server{
 		cfg:                   cfg,
@@ -946,6 +980,8 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		statsHandler:          statsHandler,
 		suppressionHandler:    suppressionHandler,
 		instanceConfigHandler: instanceConfigHandler,
+		userAdminHandler:      userAdminHandler,
+		eventAdminHandler:     eventAdminHandler,
 		scheduler:             sched,
 		securityMw:            secMw,
 		uploadsDir:            uploadsDir,

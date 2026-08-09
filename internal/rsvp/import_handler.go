@@ -1,12 +1,12 @@
 package rsvp
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // csvTemplateContent is the CSV template provided to organizers for guest
@@ -84,7 +84,7 @@ func (h *Handler) handleImportExecute(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventId")
 
 	var req CSVImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

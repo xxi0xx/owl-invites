@@ -1,13 +1,13 @@
 package event
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // SeriesHandler holds HTTP handlers for event series endpoints.
@@ -58,7 +58,7 @@ func (h *SeriesHandler) handleCreateSeries(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req CreateSeriesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -136,7 +136,7 @@ func (h *SeriesHandler) handleUpdateSeries(w http.ResponseWriter, r *http.Reques
 	seriesID := chi.URLParam(r, "seriesId")
 
 	var req UpdateSeriesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

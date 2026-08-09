@@ -170,6 +170,7 @@ func TestConfig() *config.Config {
 		DBDSN:                     ":memory:",
 		MagicLinkExpiry:           15 * time.Minute,
 		SessionExpiry:             168 * time.Hour,
+		AccountInviteExpiry:       72 * time.Hour,
 		BaseURL:                   "http://localhost:8080",
 		NotificationEmailProvider: "smtp",
 		SMTPHost:                  "localhost",
@@ -177,5 +178,8 @@ func TestConfig() *config.Config {
 		SMTPFrom:                  "test@openrsvp.local",
 		DefaultRetentionDays:      30,
 		MaxCoHostsPerEvent:        10,
+		// Most legacy tests exercise the pre-Gate-1 open-signup behavior
+		// explicitly. Production configuration defaults this to false.
+		AllowSignups: true,
 	}
 }

@@ -136,7 +136,7 @@ func (s *Store) loadFeatureAdoption(ctx context.Context, out *FeatureAdoption) e
 	}{
 		{"SELECT COUNT(*) FROM events WHERE waitlist_enabled = ?", &out.WaitlistEvents},
 		{"SELECT COUNT(*) FROM events WHERE comments_enabled = ?", &out.CommentsEnabledEvents},
-		{"SELECT COUNT(DISTINCT event_id) FROM event_cohosts", &out.CohostedEvents},
+		{"SELECT COUNT(DISTINCT event_id) FROM event_memberships WHERE role = 'cohost'", &out.CohostedEvents},
 		{"SELECT COUNT(DISTINCT event_id) FROM event_questions", &out.EventsWithQuestions},
 		{"SELECT COUNT(*) FROM events WHERE max_capacity IS NOT NULL", &out.EventsWithCapacity},
 		{"SELECT COUNT(*) FROM events WHERE series_id IS NOT NULL", &out.SeriesEvents},

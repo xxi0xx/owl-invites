@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // OrganizerFromCtx extracts the organizer ID from the request context.
@@ -114,7 +115,7 @@ func (h *Handler) handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SaveInviteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

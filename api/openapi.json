@@ -1,0 +1,320 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Owl Invites API",
+    "version": "0.1.0",
+    "description": "Gate 1 identity, setup, administration, and event-membership contract."
+  },
+  "servers": [{ "url": "/api/v1" }],
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": { "type": "apiKey", "in": "cookie", "name": "session" }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": ["id", "email", "name", "timezone", "instanceRole", "status", "isAdmin", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "name": { "type": "string" },
+          "timezone": { "type": "string" },
+          "instanceRole": { "type": "string", "enum": ["admin", "user"] },
+          "status": { "type": "string", "enum": ["invited", "active", "disabled"] },
+          "isAdmin": { "type": "boolean", "deprecated": true },
+          "invitedByUserId": { "type": "string", "format": "uuid" },
+          "activatedAt": { "type": "string", "format": "date-time" },
+          "lastLoginAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InstanceSettings": {
+        "type": "object",
+        "required": ["instanceName", "defaultTimezone", "allowSignups", "supportEmail", "configured"],
+        "properties": {
+          "instanceName": { "type": "string", "maxLength": 200 },
+          "defaultTimezone": { "type": "string", "maxLength": 100 },
+          "allowSignups": { "type": "boolean" },
+          "supportEmail": { "type": "string" },
+          "configured": { "type": "boolean", "readOnly": true }
+        }
+      },
+      "InstanceSettingsUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["instanceName", "defaultTimezone", "allowSignups", "supportEmail"],
+        "properties": {
+          "instanceName": { "type": "string", "maxLength": 200 },
+          "defaultTimezone": { "type": "string", "maxLength": 100 },
+          "allowSignups": { "type": "boolean" },
+          "supportEmail": { "type": "string" }
+        }
+      },
+      "SetupStatus": {
+        "type": "object",
+        "required": ["configured", "setupRequired"],
+        "properties": {
+          "configured": { "type": "boolean" },
+          "setupRequired": { "type": "boolean" }
+        }
+      },
+      "BootstrapRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["bootstrapToken", "adminEmail", "adminName", "instanceName", "defaultTimezone", "allowSignups", "supportEmail"],
+        "properties": {
+          "bootstrapToken": { "type": "string" },
+          "adminEmail": { "type": "string", "format": "email" },
+          "adminName": { "type": "string", "maxLength": 200 },
+          "instanceName": { "type": "string", "maxLength": 200 },
+          "defaultTimezone": { "type": "string", "maxLength": 100 },
+          "allowSignups": { "type": "boolean", "default": false },
+          "supportEmail": { "type": "string", "format": "email" }
+        }
+      },
+      "AccountInvite": {
+        "type": "object",
+        "required": ["id", "targetUserId", "email", "invitedByUserId", "expiresAt", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "targetUserId": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "invitedByUserId": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "eventRole": { "type": "string", "enum": ["cohost"] },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "acceptedAt": { "type": "string", "format": "date-time" },
+          "revokedAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "required": ["id", "actorKind", "action", "metadata", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "actorUserId": { "type": "string", "format": "uuid" },
+          "actorKind": { "type": "string", "enum": ["user", "cli", "system"] },
+          "action": { "type": "string" },
+          "targetUserId": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": ["id", "organizerId", "title", "description", "eventDate", "location", "timezone", "retentionDays", "status", "shareToken", "contactRequirement", "showHeadcount", "showGuestList", "waitlistEnabled", "commentsEnabled", "seriesOverride", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizerId": { "type": "string", "format": "uuid", "deprecated": true },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "eventDate": { "type": "string", "format": "date-time" },
+          "endDate": { "type": "string", "format": "date-time" },
+          "location": { "type": "string" },
+          "timezone": { "type": "string" },
+          "retentionDays": { "type": "integer" },
+          "status": { "type": "string", "enum": ["draft", "published", "cancelled", "archived"] },
+          "shareToken": { "type": "string" },
+          "contactRequirement": { "type": "string", "enum": ["email", "phone", "email_or_phone", "email_and_phone"] },
+          "showHeadcount": { "type": "boolean" },
+          "showGuestList": { "type": "boolean" },
+          "rsvpDeadline": { "type": "string", "format": "date-time" },
+          "maxCapacity": { "type": "integer" },
+          "waitlistEnabled": { "type": "boolean" },
+          "commentsEnabled": { "type": "boolean" },
+          "seriesId": { "type": "string", "format": "uuid" },
+          "seriesIndex": { "type": "integer" },
+          "seriesOverride": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EventMembership": {
+        "type": "object",
+        "required": ["id", "eventId", "userId", "role", "grantedByUserId", "createdAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "userId": { "type": "string", "format": "uuid" },
+          "role": { "type": "string", "enum": ["owner", "cohost"] },
+          "grantedByUserId": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "name": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPIContract",
+        "responses": { "200": { "description": "OpenAPI 3.1 contract", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
+      }
+    },
+    "/setup/status": {
+      "get": {
+        "operationId": "getSetupStatus",
+        "responses": { "200": { "description": "Setup state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SetupStatus" } } } } }
+      }
+    },
+    "/setup/bootstrap": {
+      "post": {
+        "operationId": "bootstrapInstance",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BootstrapRequest" } } } },
+        "responses": { "201": { "description": "Configured and signed in", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "object", "required": ["user", "configured"], "properties": { "user": { "$ref": "#/components/schemas/User" }, "configured": { "type": "boolean" } } } } } } } } }
+      }
+    },
+    "/setup/config": {
+      "get": {
+        "operationId": "getInstanceSettings",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Settings", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InstanceSettings" } } } } } } }
+      },
+      "post": {
+        "operationId": "updateInstanceSettings",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InstanceSettingsUpdate" } } } },
+        "responses": { "200": { "description": "Updated settings", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InstanceSettings" } } } } } } }
+      }
+    },
+    "/auth/magic-link": {
+      "post": {
+        "operationId": "requestMagicLink",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["email"], "properties": { "email": { "type": "string", "format": "email" } } } } } },
+        "responses": { "200": { "description": "Enumeration-resistant acknowledgement", "content": { "application/json": { "schema": { "type": "object", "required": ["message"], "properties": { "message": { "type": "string" } } } } } } }
+      }
+    },
+    "/auth/verify": {
+      "post": {
+        "operationId": "verifyMagicLink",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["token"], "properties": { "token": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Session created", "content": { "application/json": { "schema": { "type": "object", "required": ["token", "organizer"], "properties": { "token": { "type": "string" }, "organizer": { "$ref": "#/components/schemas/User" } } } } } } }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "getCurrentUser",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Current user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } } }
+      },
+      "patch": {
+        "operationId": "updateCurrentUser",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" }, "timezone": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Updated user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } } }
+      }
+    },
+    "/auth/account-invites/accept": {
+      "post": {
+        "operationId": "acceptAccountInvite",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["token"], "properties": { "token": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Activated and signed in", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "object", "required": ["user"], "properties": { "user": { "$ref": "#/components/schemas/User" } } } } } } } } }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "listUsers",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Users", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "object", "required": ["users"], "properties": { "users": { "type": "array", "items": { "$ref": "#/components/schemas/User" } } } } } } } } } }
+      }
+    },
+    "/admin/users/invites": {
+      "get": {
+        "operationId": "listAccountInvites",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Pending invitations", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "object", "required": ["invites"], "properties": { "invites": { "type": "array", "items": { "$ref": "#/components/schemas/AccountInvite" } } } } } } } } } }
+      },
+      "post": {
+        "operationId": "inviteUser",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["email"], "properties": { "email": { "type": "string", "format": "email" } } } } } },
+        "responses": { "201": { "description": "Invitation issued", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/AccountInvite" } } } } } } }
+      }
+    },
+    "/admin/users/invites/{inviteId}": {
+      "delete": {
+        "operationId": "revokeAccountInvite",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "inviteId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "204": { "description": "Revoked" } }
+      }
+    },
+    "/admin/users/{userId}/status": {
+      "patch": {
+        "operationId": "updateUserStatus",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["active", "disabled"] } } } } } },
+        "responses": { "204": { "description": "Updated" } }
+      }
+    },
+    "/admin/users/{userId}/role": {
+      "patch": {
+        "operationId": "updateUserRole",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["instanceRole"], "properties": { "instanceRole": { "type": "string", "enum": ["admin", "user"] } } } } } },
+        "responses": { "204": { "description": "Updated" } }
+      }
+    },
+    "/admin/audit": {
+      "get": {
+        "operationId": "listAdminAudit",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 200 } }],
+        "responses": { "200": { "description": "Audit entries", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "object", "required": ["entries"], "properties": { "entries": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEntry" } } } } } } } } } }
+      }
+    },
+    "/admin/events/{eventId}/memberships/self": {
+      "post": {
+        "operationId": "addAdminEventMembership",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "204": { "description": "Membership granted" } }
+      }
+    },
+    "/admin/events/{eventId}/ownership-transfer": {
+      "post": {
+        "operationId": "transferEventOwnership",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["newOwnerUserId"], "properties": { "newOwnerUserId": { "type": "string", "format": "uuid" } } } } } },
+        "responses": { "204": { "description": "Ownership transferred" } }
+      }
+    },
+    "/events": {
+      "get": {
+        "operationId": "listEvents",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Explicitly accessible events", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } } } } } } } }
+      }
+    },
+    "/events/{eventId}/cohosts": {
+      "get": {
+        "operationId": "listEventCohosts",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Cohost memberships", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/EventMembership" } } } } } } } }
+      },
+      "post": {
+        "operationId": "inviteEventCohost",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["email"], "properties": { "email": { "type": "string", "format": "email" } } } } } },
+        "responses": { "202": { "description": "Account invitation sent" }, "201": { "description": "Membership created" } }
+      }
+    }
+  }
+}

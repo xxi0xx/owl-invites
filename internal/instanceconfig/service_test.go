@@ -21,7 +21,8 @@ func TestService_GetSettings_Empty(t *testing.T) {
 
 	settings, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, "", settings.InstanceName)
+	assert.Equal(t, "Owl Invites", settings.InstanceName)
+	assert.Equal(t, "UTC", settings.DefaultTimezone)
 	assert.False(t, settings.AllowSignups)
 	assert.False(t, settings.Configured)
 }
@@ -44,10 +45,10 @@ func TestService_SaveAndGetSettings(t *testing.T) {
 	assert.Equal(t, "Europe/Paris", got.DefaultTimezone)
 	assert.True(t, got.AllowSignups)
 	assert.Equal(t, "help@example.org", got.SupportEmail)
-	assert.True(t, got.Configured, "SaveSettings must set configured=true")
+	assert.False(t, got.Configured, "ongoing settings must not complete bootstrap")
 }
 
-func TestService_SaveSettings_SetsConfiguredFlag(t *testing.T) {
+func TestService_SaveSettings_CannotSetConfiguredFlag(t *testing.T) {
 	svc := setupService(t)
 	ctx := context.Background()
 
@@ -62,7 +63,7 @@ func TestService_SaveSettings_SetsConfiguredFlag(t *testing.T) {
 
 	configured, err = svc.IsConfigured(ctx)
 	require.NoError(t, err)
-	assert.True(t, configured)
+	assert.False(t, configured)
 }
 
 func TestService_GetPublicConfig(t *testing.T) {

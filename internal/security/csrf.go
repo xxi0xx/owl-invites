@@ -243,8 +243,9 @@ func isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	// Respect common reverse-proxy headers.
-	if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+	// Respect the forwarded scheme only after TrustedProxyMiddleware verified
+	// that the immediate peer is configured as trusted.
+	if ForwardedHeadersTrusted(r.Context()) && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		return true
 	}
 	return false

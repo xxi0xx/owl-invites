@@ -67,7 +67,7 @@ func setupRSVPHandler(t *testing.T) (http.Handler, *rsvp.Service, *event.Service
 	authMW := testutil.FakeAuthMiddleware(func(ctx context.Context) context.Context {
 		return auth.ContextWithOrganizer(ctx, org)
 	})
-	handler := rsvp.NewHandler(rsvpSvc, authMW, rsvpOrgFromCtx(), makeCheckEventOwner(eventSvc), zerolog.Nop())
+	handler := rsvp.NewHandler(rsvpSvc, authMW, rsvpOrgFromCtx(), makeCheckEventOwner(eventSvc), zerolog.Nop(), rsvp.WithLegacyPublicWrites())
 	return handler.Routes(), rsvpSvc, eventSvc, org
 }
 
@@ -90,7 +90,7 @@ func setupRSVPHandlerNoAuth(t *testing.T) (http.Handler, *event.Service, *auth.O
 	rsvpStore := rsvp.NewStore(db)
 	rsvpSvc := rsvp.NewService(rsvpStore, eventSvc, inviteSvc, zerolog.Nop())
 
-	handler := rsvp.NewHandler(rsvpSvc, testutil.NoAuthMiddleware(), rsvpOrgFromCtx(), makeCheckEventOwner(eventSvc), zerolog.Nop())
+	handler := rsvp.NewHandler(rsvpSvc, testutil.NoAuthMiddleware(), rsvpOrgFromCtx(), makeCheckEventOwner(eventSvc), zerolog.Nop(), rsvp.WithLegacyPublicWrites())
 	return handler.Routes(), eventSvc, org
 }
 
@@ -286,6 +286,35 @@ func TestHandleGetByToken_WithAttendance(t *testing.T) {
 }
 
 // --- Submit RSVP ---
+
+func TestLegacyPublicWritesDisabledByDefault(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	cfg := testutil.TestConfig()
+	authStore := auth.NewStore(db)
+	org, err := authStore.CreateOrganizer(context.Background(), "legacy-disabled@example.com")
+	require.NoError(t, err)
+	eventSvc := event.NewService(event.NewStore(db), cfg.DefaultRetentionDays)
+	inviteSvc := invite.NewService(invite.NewStore(db), t.TempDir())
+	rsvpSvc := rsvp.NewService(rsvp.NewStore(db), eventSvc, inviteSvc, zerolog.Nop())
+	h := rsvp.NewHandler(rsvpSvc, testutil.NoAuthMiddleware(), rsvpOrgFromCtx(), makeCheckEventOwner(eventSvc), zerolog.Nop()).Routes()
+	shareToken, _ := publishEvent(t, eventSvc, org.ID)
+
+	requests := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/public/" + shareToken},
+		{http.MethodPost, "/public/" + shareToken + "/lookup"},
+		{http.MethodPut, "/public/token/legacy-token"},
+		{http.MethodPatch, "/public/token/legacy-token"},
+	}
+	for _, tc := range requests {
+		rr := testutil.DoRequest(t, h, tc.method, tc.path, map[string]any{})
+		assert.Equal(t, http.StatusGone, rr.Code, "%s %s", tc.method, tc.path)
+		body := testutil.ParseJSON(t, rr)
+		assert.Equal(t, "legacy_rsvp_disabled", body["error"])
+	}
+}
 
 func TestHandleSubmitRSVP_Success(t *testing.T) {
 	h, _, eventSvc, org := setupRSVPHandler(t)

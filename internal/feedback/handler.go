@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // OrganizerFromCtx extracts the organizer email from the request context.
@@ -70,7 +71,7 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req submitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -110,7 +111,7 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 // feedback. No organizer identity is required.
 func (h *Handler) handleSubmitPublic(w http.ResponseWriter, r *http.Request) {
 	var req publicSubmitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

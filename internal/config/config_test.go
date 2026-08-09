@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,4 +52,52 @@ func TestLoadSESEnv(t *testing.T) {
 	assert.Equal(t, "ses-user", cfg.SESUsername)
 	assert.Equal(t, "ses-pass", cfg.SESPassword)
 	assert.Equal(t, "ses@example.com", cfg.SESFrom)
+}
+
+func TestAllowSignupsDefaultsOff(t *testing.T) {
+	t.Setenv("ALLOW_SIGNUPS", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.AllowSignups)
+}
+
+func TestAllowSignupsCanBeExplicitlyEnabled(t *testing.T) {
+	t.Setenv("ALLOW_SIGNUPS", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.AllowSignups)
+}
+
+func TestBootstrapTokenUsesOwlInvitesEnvironmentKey(t *testing.T) {
+	t.Setenv("OWL_INVITES_BOOTSTRAP_TOKEN", "operator-secret")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "operator-secret", cfg.BootstrapToken)
+}
+
+func TestAccountInviteExpiryUsesOwlInvitesEnvironmentKey(t *testing.T) {
+	t.Setenv("OWL_INVITES_ACCOUNT_INVITE_EXPIRY", "48h")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, 48*time.Hour, cfg.AccountInviteExpiry)
+}
+
+func TestTrustedProxiesRejectsInvalidEntries(t *testing.T) {
+	t.Setenv("TRUSTED_PROXIES", "not-a-network")
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid TRUSTED_PROXIES")
+}
+
+func TestTrustedProxiesAcceptsIPsAndCIDRs(t *testing.T) {
+	t.Setenv("TRUSTED_PROXIES", "127.0.0.1, 10.0.0.0/8, 2001:db8::/32")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"127.0.0.1", "10.0.0.0/8", "2001:db8::/32"}, cfg.TrustedProxies)
 }

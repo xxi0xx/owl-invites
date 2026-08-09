@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/rs/zerolog"
 
+	apidoc "github.com/yannkr/openrsvp/api"
 	"github.com/yannkr/openrsvp/internal/security"
 )
 
@@ -22,6 +23,9 @@ func (s *Server) routes() *chi.Mux {
 	r := chi.NewRouter()
 
 	// --- Middleware ---
+	// Resolve client identity and forwarded scheme before any middleware uses
+	// them. Forwarded headers from untrusted peers are stripped fail-closed.
+	r.Use(security.TrustedProxyMiddleware(s.cfg.TrustedProxies))
 	// Set baseline security headers on every response.
 	r.Use(security.SecurityHeadersMiddleware())
 	r.Use(cors.Handler(cors.Options{
@@ -35,13 +39,6 @@ func (s *Server) routes() *chi.Mux {
 	r.Use(middleware.Compress(5, "text/html", "text/css", "application/javascript", "application/json", "image/svg+xml", "text/plain"))
 	r.Use(zerologMiddleware(s.logger))
 	r.Use(middleware.Recoverer)
-	// Only trust X-Forwarded-For / X-Real-IP when TRUSTED_PROXIES is
-	// configured.  Without it, any client can spoof their IP and bypass
-	// rate limiting.  Operators behind a reverse proxy should set
-	// TRUSTED_PROXIES to their proxy's address(es).
-	if len(s.cfg.TrustedProxies) > 0 {
-		r.Use(middleware.RealIP)
-	}
 	r.Use(middleware.RequestID)
 	r.Use(s.securityMw.CSRF)
 
@@ -59,6 +56,7 @@ func (s *Server) routes() *chi.Mux {
 		api.Use(s.securityMw.Sanitize)
 
 		api.Get("/health", s.handleHealth)
+		api.Get("/openapi.json", apidoc.ServeHTTP)
 
 		// Public app config (non-sensitive feature flags).
 		api.Get("/config", func(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +73,9 @@ func (s *Server) routes() *chi.Mux {
 		// management endpoints (/me, /logout) fall under the general API
 		// rate limiter so SPA page-load calls to /auth/me don't exhaust
 		// the auth rate budget.
+		api.Mount("/auth/account-invites", s.userAdminHandler.PublicRoutes(
+			security.RateLimitMiddleware(s.securityMw.AuthRateLimiter),
+		))
 		api.Mount("/auth", s.authHandler.Routes(
 			security.RateLimitMiddleware(s.securityMw.AuthRateLimiter),
 		))
@@ -122,11 +123,17 @@ func (s *Server) routes() *chi.Mux {
 		api.Mount("/comments", s.commentHandler.Routes())
 		api.Mount("/webhooks", s.webhookHandler.Routes())
 		api.Mount("/notifications", s.notifHandler.Routes())
+		api.Mount("/admin/users", s.userAdminHandler.UserRoutes())
+		api.Mount("/admin/audit", s.userAdminHandler.AuditRoutes())
+		api.Mount("/admin/events", s.eventAdminHandler.Routes())
 		api.Mount("/admin", s.statsHandler.Routes())
 		// Public, token-based email unsubscribe (no auth, CSRF-exempt).
 		api.Mount("/unsubscribe", s.suppressionHandler.Routes())
-		// Instance setup wizard: GET /setup/status is public; config read/write are admin.
-		api.Mount("/setup", s.instanceConfigHandler.Routes())
+		// Instance setup: status and one-time token bootstrap are public;
+		// ongoing config remains admin-only.
+		api.Mount("/setup", s.instanceConfigHandler.Routes(
+			security.RateLimitMiddleware(s.securityMw.AuthRateLimiter),
+		))
 	})
 
 	// --- Static files / SPA fallback ---

@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // AttendeeInfo holds the resolved attendee data needed by the message handler.
@@ -97,7 +98,7 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SendMessageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -162,7 +163,7 @@ func (h *Handler) handleAttendeeSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req AttendeeSendRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

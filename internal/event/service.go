@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -78,17 +77,11 @@ func (s *Service) CanManageEvent(ctx context.Context, eventID, organizerID strin
 	if err != nil || ev == nil {
 		return false, err
 	}
-	if ev.OrganizerID == organizerID {
-		return true, nil
-	}
-	if s.cohostStore == nil {
-		return false, nil
-	}
-	cohost, err := s.cohostStore.FindByEventAndOrganizer(ctx, eventID, organizerID)
+	role, err := s.store.FindMembershipRole(ctx, eventID, organizerID)
 	if err != nil {
 		return false, err
 	}
-	return cohost != nil, nil
+	return role == "owner" || role == "cohost", nil
 }
 
 // IsEventOwner checks whether the given organizer is the owner (not co-host) of
@@ -98,7 +91,11 @@ func (s *Service) IsEventOwner(ctx context.Context, eventID, organizerID string)
 	if err != nil || ev == nil {
 		return false, err
 	}
-	return ev.OrganizerID == organizerID, nil
+	role, err := s.store.FindMembershipRole(ctx, eventID, organizerID)
+	if err != nil {
+		return false, err
+	}
+	return role == "owner", nil
 }
 
 // Create validates the request and creates a new event for the given organizer.
@@ -253,61 +250,14 @@ func (s *Service) GetByShareToken(ctx context.Context, token string) (*Event, er
 // ListByOrganizer retrieves all events belonging to the given organizer,
 // including events where the organizer is a co-host.
 func (s *Service) ListByOrganizer(ctx context.Context, organizerID string) ([]*Event, error) {
-	owned, err := s.store.FindByOrganizerID(ctx, organizerID)
+	events, err := s.store.FindByOrganizerID(ctx, organizerID)
 	if err != nil {
 		return nil, err
 	}
-
-	if s.cohostStore == nil {
-		if owned == nil {
-			owned = []*Event{}
-		}
-		return owned, nil
+	if events == nil {
+		events = []*Event{}
 	}
-
-	cohostIDs, err := s.cohostStore.FindCohostedEventIDs(ctx, organizerID)
-	if err != nil {
-		if owned == nil {
-			owned = []*Event{}
-		}
-		return owned, nil // Fall back to owned only on error
-	}
-
-	if len(cohostIDs) == 0 {
-		if owned == nil {
-			owned = []*Event{}
-		}
-		return owned, nil
-	}
-
-	cohosted, err := s.store.FindByIDs(ctx, cohostIDs)
-	if err != nil {
-		if owned == nil {
-			owned = []*Event{}
-		}
-		return owned, nil
-	}
-
-	// Merge and deduplicate.
-	ownedIDs := make(map[string]bool)
-	for _, e := range owned {
-		ownedIDs[e.ID] = true
-	}
-	for _, e := range cohosted {
-		if !ownedIDs[e.ID] {
-			owned = append(owned, e)
-		}
-	}
-
-	// Sort by event_date DESC.
-	sort.Slice(owned, func(i, j int) bool {
-		return owned[i].EventDate.After(owned[j].EventDate)
-	})
-
-	if owned == nil {
-		owned = []*Event{}
-	}
-	return owned, nil
+	return events, nil
 }
 
 // Update applies partial updates to an event. The event owner or a co-host can
@@ -535,7 +485,11 @@ func (s *Service) Duplicate(ctx context.Context, eventID, organizerID string) (*
 	if e == nil {
 		return nil, fmt.Errorf("event not found")
 	}
-	if e.OrganizerID != organizerID {
+	isOwner, err := s.IsEventOwner(ctx, eventID, organizerID)
+	if err != nil {
+		return nil, err
+	}
+	if !isOwner {
 		return nil, fmt.Errorf("forbidden: you do not own this event")
 	}
 
@@ -591,7 +545,11 @@ func (s *Service) Delete(ctx context.Context, eventID, organizerID string) error
 	if e == nil {
 		return fmt.Errorf("event not found")
 	}
-	if e.OrganizerID != organizerID {
+	isOwner, err := s.IsEventOwner(ctx, eventID, organizerID)
+	if err != nil {
+		return err
+	}
+	if !isOwner {
 		return fmt.Errorf("forbidden: you do not own this event")
 	}
 

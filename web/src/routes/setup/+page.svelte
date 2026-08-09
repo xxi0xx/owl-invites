@@ -1,67 +1,59 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
+	import { currentUser } from '$lib/stores/auth';
 	import { toast } from '$lib/stores/toast';
 	import { getTimezoneOptions } from '$lib/utils/timezones';
-	import type { ApiResponse } from '$lib/types';
-	import AppShell from '$lib/components/layout/AppShell.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 
-	interface SetupConfig {
-		instance_name: string;
-		default_timezone: string;
-		allow_signups: boolean;
-		support_email: string;
-	}
-
 	const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 	const tzOptions = getTimezoneOptions(browserTz);
+	const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 	let loading = $state(true);
-	// True when the API rejected the config read with 401/403 — operator must log in as admin.
-	let needsAdmin = $state(false);
 	let submitting = $state(false);
-
-	// Whether the instance has already been configured. Drives the wizard vs. settings framing.
+	let setupRequired = $state(false);
 	let configured = $state(false);
+	let needsAdmin = $state(false);
 
-	// Form fields
-	let instanceName = $state('');
+	let bootstrapToken = $state('');
+	let adminEmail = $state('');
+	let adminName = $state('');
+	let instanceName = $state('Owl Invites');
 	let defaultTimezone = $state(browserTz);
-	let allowSignups = $state(true);
+	let allowSignups = $state(false);
 	let supportEmail = $state('');
-
 	let errors: Record<string, string> = $state({});
-
-	const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 	onMount(async () => {
 		try {
-			// Public endpoint: tells us whether this is a first-run instance.
-			const status = await api.get<ApiResponse<{ configured: boolean }>>('/setup/status');
-			configured = status.data.configured;
-		} catch {
-			// Non-fatal: fall back to first-run framing if status is unavailable.
-		}
-
-		try {
-			// Admin-only endpoint. Load current values to prefill the form.
-			const cfg = await api.get<ApiResponse<SetupConfig>>('/setup/config');
-			instanceName = cfg.data.instance_name ?? '';
-			defaultTimezone = cfg.data.default_timezone || browserTz;
-			allowSignups = cfg.data.allow_signups ?? true;
-			supportEmail = cfg.data.support_email ?? '';
-		} catch (e: unknown) {
-			const apiErr = e as { status?: number };
-			if (apiErr.status === 401 || apiErr.status === 403) {
-				needsAdmin = true;
-			} else {
-				toast.error('Failed to load instance settings');
+			const status = await api.operation('getSetupStatus');
+			setupRequired = status.setupRequired;
+			configured = status.configured;
+			if (!setupRequired) {
+				try {
+					const response = await api.operation('getInstanceSettings');
+					instanceName = response.data.instanceName;
+					defaultTimezone = response.data.defaultTimezone || browserTz;
+					allowSignups = response.data.allowSignups;
+					supportEmail = response.data.supportEmail;
+				} catch (error: unknown) {
+					const apiError = error as { status?: number };
+					if (apiError.status === 401 || apiError.status === 403) {
+						needsAdmin = true;
+					} else {
+						throw error;
+					}
+				}
 			}
+		} catch (error: unknown) {
+			const apiError = error as { message?: string };
+			toast.error(apiError.message || 'Failed to load setup status');
 		} finally {
 			loading = false;
 		}
@@ -69,35 +61,57 @@
 
 	function validate(): boolean {
 		errors = {};
-		if (!instanceName.trim()) {
-			errors.instanceName = 'Instance name is required';
-		}
+		if (!instanceName.trim()) errors.instanceName = 'Instance name is required';
+		if (!defaultTimezone) errors.defaultTimezone = 'Default timezone is required';
 		if (supportEmail.trim() && !EMAIL_RE.test(supportEmail.trim())) {
 			errors.supportEmail = 'Enter a valid email address';
+		}
+		if (setupRequired) {
+			if (!bootstrapToken) errors.bootstrapToken = 'Bootstrap token is required';
+			if (!adminName.trim()) errors.adminName = 'Administrator name is required';
+			if (!EMAIL_RE.test(adminEmail.trim())) errors.adminEmail = 'Enter a valid email address';
 		}
 		return Object.keys(errors).length === 0;
 	}
 
-	async function handleSubmit() {
+	async function handleSubmit(event: SubmitEvent) {
+		event.preventDefault();
 		if (!validate()) return;
 		submitting = true;
 		try {
-			await api.post('/setup/config', {
-				instance_name: instanceName.trim(),
-				default_timezone: defaultTimezone,
-				allow_signups: allowSignups,
-				support_email: supportEmail.trim()
-			});
-			configured = true;
-			toast.success('Instance configured');
-		} catch (e: unknown) {
-			const apiErr = e as { status?: number; message?: string };
-			if (apiErr.status === 401 || apiErr.status === 403) {
-				needsAdmin = true;
-				toast.error('You must be signed in as an admin to save settings');
+			if (setupRequired) {
+				const response = await api.operation('bootstrapInstance', {
+					body: {
+						bootstrapToken,
+						adminEmail: adminEmail.trim().toLowerCase(),
+						adminName: adminName.trim(),
+						instanceName: instanceName.trim(),
+						defaultTimezone,
+						allowSignups,
+						supportEmail: supportEmail.trim()
+					}
+				});
+				bootstrapToken = '';
+				$currentUser = response.data.user;
+				// A safe authenticated request mints the session-bound CSRF cookie.
+				$currentUser = await api.operation('getCurrentUser');
+				toast.success('Owl Invites is ready');
+				await goto('/events', { replaceState: true });
 			} else {
-				toast.error(apiErr.message || 'Failed to save settings');
+				await api.operation('updateInstanceSettings', {
+					body: {
+						instanceName: instanceName.trim(),
+						defaultTimezone,
+						allowSignups,
+						supportEmail: supportEmail.trim()
+					}
+				});
+				toast.success('Instance settings saved');
 			}
+		} catch (error: unknown) {
+			const apiError = error as { status?: number; message?: string };
+			if (apiError.status === 401 || apiError.status === 403) needsAdmin = !setupRequired;
+			toast.error(apiError.message || (setupRequired ? 'Setup failed' : 'Failed to save settings'));
 		} finally {
 			submitting = false;
 		}
@@ -105,101 +119,102 @@
 </script>
 
 <svelte:head>
-	<title>{configured ? 'Instance Settings' : 'Setup'} -- OpenRSVP</title>
+	<title>{setupRequired ? 'Set up Owl Invites' : 'Instance Settings'}</title>
+	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<AppShell>
-	<div class="max-w-2xl mx-auto">
+<div class="min-h-screen bg-neutral-50">
+	<header class="border-b border-neutral-200 bg-surface">
+		<div class="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
+			<a href="/" class="font-display text-xl font-bold text-primary">Owl Invites</a>
+			{#if configured}
+				<a href="/admin" class="text-sm font-medium text-neutral-600 hover:text-neutral-900">Back to admin</a>
+			{/if}
+		</div>
+	</header>
+
+	<main class="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
 		{#if loading}
-			<div class="flex items-center justify-center py-20">
-				<Spinner />
-			</div>
+			<div class="flex items-center justify-center py-20"><Spinner size="lg" /></div>
 		{:else if needsAdmin}
 			<Card>
-				<div class="text-center py-6 space-y-4">
-					<h1 class="text-xl font-bold font-display text-neutral-900">Admin sign-in required</h1>
-					<p class="text-sm text-neutral-500">
-						Instance configuration can only be changed by an administrator. Please sign in
-						with an admin account to continue.
+				<div class="space-y-4 py-8 text-center">
+					<h1 class="font-display text-2xl font-bold text-neutral-900">Administrator sign-in required</h1>
+					<p class="mx-auto max-w-md text-sm text-neutral-500">
+						Instance settings are restricted to Owl Invites administrators.
 					</p>
-					<div class="pt-2">
-						<Button href="/auth/login">Sign in as admin</Button>
-					</div>
+					<Button href="/auth/login">Sign in</Button>
 				</div>
 			</Card>
 		{:else}
 			<div class="mb-8">
-				<h1 class="text-2xl font-bold font-display text-neutral-900">
-					{configured ? 'Instance Settings' : 'Welcome to OpenRSVP'}
+				<p class="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">
+					{setupRequired ? 'First-run setup' : 'Administration'}
+				</p>
+				<h1 class="font-display text-3xl font-bold text-neutral-900">
+					{setupRequired ? 'Set up Owl Invites' : 'Instance settings'}
 				</h1>
-				<p class="mt-2 text-sm text-neutral-500">
-					{#if configured}
-						Update your instance-wide configuration. These settings apply to every event and
-						organizer on this server.
-					{:else}
-						Let's get your instance set up. These settings apply across the whole server and
-						can be changed later from this page.
-					{/if}
+				<p class="mt-2 text-neutral-600">
+					{setupRequired
+						? 'Create the first administrator and choose secure defaults for this instance.'
+						: 'Manage defaults that apply across every account and event.'}
 				</p>
 			</div>
 
-			<Card>
-				<div class="space-y-6">
-					<Input
-						label="Instance name"
-						name="instanceName"
-						bind:value={instanceName}
-						placeholder="Acme Events"
-						helper="Shown to organizers and guests across the instance."
-						error={errors.instanceName || ''}
-						required
-					/>
+			<form onsubmit={handleSubmit}>
+				<Card>
+					<div class="space-y-8">
+						{#if setupRequired}
+							<section class="space-y-5" aria-labelledby="bootstrap-heading">
+								<div>
+									<h2 id="bootstrap-heading" class="font-display text-lg font-semibold text-neutral-900">Operator authorization</h2>
+									<p class="mt-1 text-sm text-neutral-500">
+										Enter the value of <code class="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-700">OWL_INVITES_BOOTSTRAP_TOKEN</code>
+										from the server environment. The token is never stored by Owl Invites, and this setup endpoint disappears after success.
+									</p>
+								</div>
+								<Input label="Bootstrap token" name="bootstrapToken" type="password" bind:value={bootstrapToken} error={errors.bootstrapToken || ''} required />
+							</section>
 
-					<div>
-						<Select
-							label="Default timezone"
-							name="defaultTimezone"
-							bind:value={defaultTimezone}
-							options={tzOptions}
-						/>
-						<p class="mt-1 text-sm text-neutral-500">Used as the default when creating new events.</p>
+							<section class="space-y-5 border-t border-neutral-200 pt-7" aria-labelledby="admin-heading">
+								<div>
+									<h2 id="admin-heading" class="font-display text-lg font-semibold text-neutral-900">First administrator</h2>
+									<p class="mt-1 text-sm text-neutral-500">This account is activated immediately and signed in when setup completes.</p>
+								</div>
+								<div class="grid gap-5 sm:grid-cols-2">
+									<Input label="Name" name="adminName" bind:value={adminName} error={errors.adminName || ''} required />
+									<Input label="Email" name="adminEmail" type="email" bind:value={adminEmail} error={errors.adminEmail || ''} required />
+								</div>
+							</section>
+						{/if}
+
+						<section class:pt-1={!setupRequired} class="space-y-5 border-t border-neutral-200 pt-7" aria-labelledby="instance-heading">
+							<div>
+								<h2 id="instance-heading" class="font-display text-lg font-semibold text-neutral-900">Instance defaults</h2>
+								<p class="mt-1 text-sm text-neutral-500">These values can be changed later by an administrator.</p>
+							</div>
+							<Input label="Instance name" name="instanceName" bind:value={instanceName} error={errors.instanceName || ''} helper="Shown to account holders and guests." required />
+							<Select label="Default timezone" name="defaultTimezone" bind:value={defaultTimezone} options={tzOptions} error={errors.defaultTimezone || ''} required />
+							<Input label="Support email (optional)" name="supportEmail" type="email" bind:value={supportEmail} error={errors.supportEmail || ''} />
+
+							<fieldset>
+								<legend class="mb-2 text-sm font-medium text-neutral-700">Account creation</legend>
+								<label class="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 p-4">
+									<input type="checkbox" bind:checked={allowSignups} class="mt-0.5 rounded border-neutral-300 text-primary focus:ring-primary/40" />
+									<span>
+										<span class="block text-sm font-medium text-neutral-800">Allow open account signups</span>
+										<span class="mt-1 block text-xs leading-relaxed text-neutral-500">Keep this off for invite-only access. Event owners can still invite co-hosts.</span>
+									</span>
+								</label>
+							</fieldset>
+						</section>
 					</div>
 
-					<fieldset class="pt-1">
-						<legend class="text-sm font-medium text-neutral-700 mb-2">Organizer signups</legend>
-						<label class="flex items-start gap-3 cursor-pointer">
-							<input
-								type="checkbox"
-								bind:checked={allowSignups}
-								class="mt-0.5 rounded border-neutral-300 text-primary focus:ring-primary/40"
-							/>
-							<div>
-								<span class="text-sm text-neutral-700">Allow new organizer signups</span>
-								<p class="text-xs text-neutral-400">
-									When off, only existing organizers can sign in. New accounts must be
-									invited.
-								</p>
-							</div>
-						</label>
-					</fieldset>
-
-					<Input
-						label="Support email (optional)"
-						name="supportEmail"
-						type="email"
-						bind:value={supportEmail}
-						placeholder="support@example.com"
-						helper="Shown to users who need help. Leave blank to hide."
-						error={errors.supportEmail || ''}
-					/>
-				</div>
-
-				<div class="mt-8 flex items-center justify-end border-t border-neutral-200 pt-6">
-					<Button onclick={handleSubmit} loading={submitting}>
-						{configured ? 'Save settings' : 'Finish setup'}
-					</Button>
-				</div>
-			</Card>
+					<div class="mt-8 flex items-center justify-end border-t border-neutral-200 pt-6">
+						<Button type="submit" loading={submitting}>{setupRequired ? 'Complete setup' : 'Save settings'}</Button>
+					</div>
+				</Card>
+			</form>
 		{/if}
-	</div>
-</AppShell>
+	</main>
+</div>

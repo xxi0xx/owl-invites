@@ -131,7 +131,7 @@ func TestServerIntegration(t *testing.T) {
 		want := map[string]string{
 			"X-Content-Type-Options":     "nosniff",
 			"X-Frame-Options":            "DENY",
-			"Referrer-Policy":            "strict-origin-when-cross-origin",
+			"Referrer-Policy":            "no-referrer",
 			"Cross-Origin-Opener-Policy": "same-origin",
 		}
 		for k, v := range want {

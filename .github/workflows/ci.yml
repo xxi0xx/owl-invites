@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
     tags-ignore: ['v*']
   pull_request:
     branches: [main]
@@ -10,9 +10,12 @@ on:
 permissions:
   contents: read
 
+env:
+  GOTOOLCHAIN: local
+
 jobs:
   frontend:
-    name: Frontend
+    name: Frontend contract & build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -24,41 +27,38 @@ jobs:
       - run: cd web && npm ci
       - run: cd web && npm run check
       - run: cd web && npm run build
-      # NOTE: `npm run test:visual` (Playwright visual regression) is intentionally
-      # NOT run here: it requires a running backend/server and is not headless-safe
-      # in CI without standing up the full app, so it would reliably fail.
 
-  backend:
-    name: Backend (Go ${{ matrix.go }})
+  backend-sqlite:
+    name: Backend (SQLite)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go: ['1.24', '1.25']
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: ${{ matrix.go }}
-      - name: Install dependencies
+          go-version: '1.26.5'
+          cache: true
+      - name: Install CGO compiler
         run: sudo apt-get update && sudo apt-get install -y gcc
       - run: go mod download
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - run: go vet ./...
-      - name: Run tests with coverage
-        run: go test -race -v -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run tests with race detector and coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
       - name: Print total coverage
         run: go tool cover -func=coverage.out | tail -1
       - name: Upload coverage to Codecov
-        if: matrix.go == '1.25'
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
         with:
           files: coverage.out
           fail_ci_if_error: false
-      - run: go build -o /dev/null ./cmd/openrsvp
+      - name: Build server and recovery CLI
+        run: |
+          go build -o /dev/null ./cmd/openrsvp
+          go build -o /dev/null ./cmd/owl-invites
 
   backend-postgres:
-    name: Backend (PostgreSQL)
+    name: Backend (PostgreSQL 16)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -80,14 +80,85 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.25'
-      - name: Install dependencies
+          go-version: '1.26.5'
+          cache: true
+      - name: Install CGO compiler
         run: sudo apt-get update && sudo apt-get install -y gcc
       - run: go mod download
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
-      - name: Run tests against PostgreSQL
+      - name: Run complete suite against PostgreSQL
         run: go test -race ./...
+
+  e2e:
+    name: Browser magic-link flow (Mailpit)
+    runs-on: ubuntu-latest
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.30.0
+        ports:
+          - 1025:1025
+          - 8025:8025
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+          cache: true
+      - name: Install build and browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+          cd web
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build full application
+        run: |
+          cd web
+          npm run check
+          npm run build
+          cd ..
+          rm -rf internal/server/frontend
+          mkdir -p internal/server/frontend
+          cp -R web/build/. internal/server/frontend/
+          mkdir -p bin
+          go build -o bin/openrsvp ./cmd/openrsvp
+      - name: Start application
+        env:
+          ENV: development
+          PORT: '8080'
+          BASE_URL: http://127.0.0.1:8080
+          DB_DRIVER: sqlite
+          DB_DSN: ${{ runner.temp }}/owl-invites-e2e.db
+          UPLOADS_DIR: ${{ runner.temp }}/owl-invites-uploads
+          ALLOW_SIGNUPS: 'false'
+          OWL_INVITES_BOOTSTRAP_TOKEN: gate-1-browser-bootstrap
+          NOTIFICATION_EMAIL_PROVIDER: smtp
+          SMTP_HOST: 127.0.0.1
+          SMTP_PORT: '1025'
+          SMTP_FROM: noreply@owl-invites.test
+        run: |
+          mkdir -p "$UPLOADS_DIR"
+          ./bin/openrsvp >"$RUNNER_TEMP/owl-invites-e2e.log" 2>&1 &
+          echo $! >"$RUNNER_TEMP/owl-invites-e2e.pid"
+      - name: Wait for application and Mailpit
+        run: |
+          curl --fail --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/health
+          curl --fail --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8025/readyz
+      - name: Run browser acceptance test
+        env:
+          BASE_URL: http://127.0.0.1:8080
+          MAILPIT_URL: http://127.0.0.1:8025
+          OWL_INVITES_E2E_BOOTSTRAP_TOKEN: gate-1-browser-bootstrap
+        run: cd web && npm run test:e2e
+      - name: Print application log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/owl-invites-e2e.log"
 
   lint:
     name: Lint (golangci-lint)
@@ -96,14 +167,10 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - name: golangci-lint
-        # Blocking gate. golangci-lint v2.12.2 binaries are built with go1.26.x
-        # and type-check the go1.26 codebase cleanly (the old go/types panic on
-        # v2.1.0 is gone). Findings fail the build; see .golangci.yml for the
-        # enabled linters and the documented pre-existing burn-down allow-list.
         uses: golangci/golangci-lint-action@db582008a42febd596419635a5abc9d9815daa9c # v9.2.1
         with:
           version: v2.12.2
@@ -111,15 +178,6 @@ jobs:
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
-    # Run on the toolchain the project actually targets. go1.26.5 patches
-    # GO-2026-5856 (Encrypted Client Hello privacy leak in crypto/tls) on top of
-    # GO-2026-5037 (crypto/x509) and GO-2026-5039 (net/textproto); GOTOOLCHAIN=local
-    # pins the analysis to the installed version so the scan reflects 1.26.5.
-    # Keep this current as new stdlib advisories land: the Dockerfile builds on the
-    # floating golang:1.26-alpine, so a stale pin here fails the gate on a
-    # vulnerability the shipped binary does not actually carry.
-    env:
-      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -130,13 +188,12 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
       - name: Run govulncheck
-        # Blocking gate. Reported vulnerabilities fail the build.
         run: govulncheck ./...
 
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [frontend, backend]
+    needs: [frontend, backend-sqlite, backend-postgres, e2e, lint, govulncheck]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3

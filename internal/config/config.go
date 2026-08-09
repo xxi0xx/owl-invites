@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -21,9 +22,10 @@ type Config struct {
 	DBDSN    string
 
 	// Auth
-	MagicLinkExpiry time.Duration
-	SessionExpiry   time.Duration
-	BaseURL         string
+	MagicLinkExpiry     time.Duration
+	SessionExpiry       time.Duration
+	AccountInviteExpiry time.Duration
+	BaseURL             string
 
 	// Notifications
 	NotificationEmailProvider string
@@ -70,8 +72,8 @@ type Config struct {
 	EmailOpenTrackingEnabled  bool
 	EmailClickTrackingEnabled bool
 
-	// Admin
-	AdminEmails []string
+	// One-time first-run authorization (environment-only).
+	BootstrapToken string
 
 	// Instance settings overlaid from the database (first-run setup wizard).
 	// These are non-secret values that an operator may set via the UI instead
@@ -107,6 +109,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid SESSION_EXPIRY: %w", err)
 	}
 
+	accountInviteExpiry, err := time.ParseDuration(getEnv("OWL_INVITES_ACCOUNT_INVITE_EXPIRY", "72h"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid OWL_INVITES_ACCOUNT_INVITE_EXPIRY: %w", err)
+	}
+	if accountInviteExpiry <= 0 {
+		return nil, fmt.Errorf("invalid OWL_INVITES_ACCOUNT_INVITE_EXPIRY: must be greater than zero")
+	}
+
 	baseURL := getEnv("BASE_URL", "http://localhost:8080")
 
 	smtpPort, err := strconv.Atoi(getEnv("SMTP_PORT", "587"))
@@ -137,6 +147,11 @@ func Load() (*Config, error) {
 		for _, entry := range strings.Split(raw, ",") {
 			entry = strings.TrimSpace(entry)
 			if entry != "" {
+				if net.ParseIP(entry) == nil {
+					if _, _, err := net.ParseCIDR(entry); err != nil {
+						return nil, fmt.Errorf("invalid TRUSTED_PROXIES entry %q: must be an IP address or CIDR", entry)
+					}
+				}
 				trustedProxies = append(trustedProxies, entry)
 			}
 		}
@@ -157,9 +172,10 @@ func Load() (*Config, error) {
 		DBDriver: dbDriver,
 		DBDSN:    dbDSN,
 
-		MagicLinkExpiry: magicLinkExpiry,
-		SessionExpiry:   sessionExpiry,
-		BaseURL:         baseURL,
+		MagicLinkExpiry:     magicLinkExpiry,
+		SessionExpiry:       sessionExpiry,
+		AccountInviteExpiry: accountInviteExpiry,
+		BaseURL:             baseURL,
 
 		NotificationEmailProvider: getEnv("NOTIFICATION_EMAIL_PROVIDER", "smtp"),
 		NotificationSMSProvider:   getEnv("NOTIFICATION_SMS_PROVIDER", ""),
@@ -203,32 +219,18 @@ func Load() (*Config, error) {
 		// overlay these at startup via ApplyInstanceOverrides.
 		InstanceName:    getEnv("INSTANCE_NAME", "OpenRSVP"),
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "UTC"),
-		AllowSignups:    getEnv("ALLOW_SIGNUPS", "true") == "true",
-		SupportEmail:    getEnv("SUPPORT_EMAIL", ""),
-	}
+		// Public organizer self-signup is opt-in. Administrator-created account
+		// invitations and owner-sponsored co-host invitations are separate flows
+		// and are not governed by this setting.
+		AllowSignups: getEnv("ALLOW_SIGNUPS", "false") == "true",
+		SupportEmail: getEnv("SUPPORT_EMAIL", ""),
 
-	// Parse ADMIN_EMAILS (comma-separated list of admin email addresses).
-	if raw := getEnv("ADMIN_EMAILS", ""); raw != "" {
-		for _, email := range strings.Split(raw, ",") {
-			email = strings.TrimSpace(strings.ToLower(email))
-			if email != "" {
-				cfg.AdminEmails = append(cfg.AdminEmails, email)
-			}
-		}
+		// One-time first-run authorization. It is intentionally env-only and
+		// must never be persisted or exposed by an API.
+		BootstrapToken: os.Getenv("OWL_INVITES_BOOTSTRAP_TOKEN"),
 	}
 
 	return cfg, nil
-}
-
-// IsAdminEmail returns true if the given email is in the ADMIN_EMAILS list.
-func (c *Config) IsAdminEmail(email string) bool {
-	email = strings.ToLower(email)
-	for _, ae := range c.AdminEmails {
-		if ae == email {
-			return true
-		}
-	}
-	return false
 }
 
 // ApplyInstanceOverrides overlays non-secret instance settings loaded from the

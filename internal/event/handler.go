@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // coHostNotifyThrottle prevents spam by tracking recent co-host notification
@@ -107,6 +108,10 @@ type OrganizerFromCtx func(ctx context.Context) (id string, ok bool)
 // OrganizerLookupByEmail looks up an organizer by email address.
 type OrganizerLookupByEmail func(ctx context.Context, email string) (id, name string, err error)
 
+// CoHostSponsor creates an explicit membership for an existing user or issues
+// an account invitation sponsored by the event owner.
+type CoHostSponsor func(ctx context.Context, ownerUserID, eventID, email string) (accountInvitePending bool, err error)
+
 // Handler holds HTTP handlers for event endpoints.
 type Handler struct {
 	service           *Service
@@ -120,6 +125,7 @@ type Handler struct {
 	notifyThrottle    *coHostNotifyThrottle
 	cohostMutexes     sync.Map // per-event mutex keyed by eventID
 	cohostRateLimiter *coHostRateLimiter
+	cohostSponsor     CoHostSponsor
 }
 
 // NewHandler creates a new event Handler.
@@ -191,6 +197,10 @@ func (h *Handler) SetNotifyCoHost(fn func(ctx context.Context, coHostEmail, even
 	h.notifyCoHost = fn
 }
 
+func (h *Handler) SetCoHostSponsor(fn CoHostSponsor) {
+	h.cohostSponsor = fn
+}
+
 // Routes returns a chi.Router with all event routes mounted.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
@@ -224,7 +234,7 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateEventRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -301,7 +311,7 @@ func (h *Handler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	eventID := chi.URLParam(r, "eventId")
 
 	var req UpdateEventRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -375,7 +385,10 @@ func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request) {
 		NotifyAttendees *bool `json:"notifyAttendees"`
 	}
 	// Body is optional; ignore decode errors for empty bodies.
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := httpx.DecodeOptionalJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
 	notifyAttendees := req.NotifyAttendees != nil && *req.NotifyAttendees
 
 	ev, err := h.service.Cancel(r.Context(), eventID, organizerID, notifyAttendees)
@@ -571,7 +584,7 @@ func (h *Handler) handleAddCoHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req AddCoHostRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -580,15 +593,30 @@ func (h *Handler) handleAddCoHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "email is required")
 		return
 	}
+	if h.cohostSponsor != nil {
+		pending, err := h.cohostSponsor(r.Context(), organizerID, eventID, req.Email)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "Unable to add co-host. Ensure the email is eligible and the event has capacity.")
+			return
+		}
+		status := "membership_created"
+		code := http.StatusCreated
+		if pending {
+			status = "account_invitation_sent"
+			code = http.StatusAccepted
+		}
+		writeJSON(w, code, map[string]any{"data": map[string]string{"status": status}})
+		return
+	}
 
 	if h.lookupByEmail == nil || h.cohostStore == nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "Unable to add co-host. Ensure the email belongs to a registered OpenRSVP account.")
+		writeError(w, http.StatusBadRequest, "bad_request", "Unable to add co-host. Ensure the email belongs to an eligible Owl Invites account.")
 		return
 	}
 
 	// Look up organizer by email. Return a generic error message regardless of
 	// the specific failure reason to prevent email enumeration.
-	genericErr := "Unable to add co-host. Ensure the email belongs to a registered OpenRSVP account."
+	genericErr := "Unable to add co-host. Ensure the email belongs to an eligible Owl Invites account."
 
 	targetID, targetName, err := h.lookupByEmail(r.Context(), req.Email)
 	if err != nil || targetID == "" {
@@ -634,11 +662,13 @@ func (h *Handler) handleAddCoHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ch := &CoHost{
-		ID:          uuid.Must(uuid.NewV7()).String(),
-		EventID:     eventID,
-		OrganizerID: targetID,
-		Role:        "cohost",
-		AddedBy:     organizerID,
+		ID:              uuid.Must(uuid.NewV7()).String(),
+		EventID:         eventID,
+		UserID:          targetID,
+		OrganizerID:     targetID,
+		Role:            "cohost",
+		GrantedByUserID: organizerID,
+		AddedBy:         organizerID,
 	}
 
 	if err := h.cohostStore.Create(r.Context(), ch); err != nil {
@@ -655,6 +685,8 @@ func (h *Handler) handleAddCoHost(w http.ResponseWriter, r *http.Request) {
 
 	ch.OrganizerEmail = req.Email
 	ch.OrganizerName = targetName
+	ch.Email = req.Email
+	ch.Name = targetName
 
 	writeJSON(w, http.StatusCreated, map[string]any{"data": ch})
 }

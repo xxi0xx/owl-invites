@@ -31,6 +31,11 @@ func seedEventWithAttendee(t *testing.T, db database.DB, organizerID, title, sha
 		 VALUES (?, ?, ?, ?, 'published', ?, ?, ?)`,
 		eventID, organizerID, title, now, shareToken, now, now)
 	require.NoError(t, err)
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO event_memberships (id, event_id, user_id, role, granted_by_user_id, created_at, updated_at)
+		 VALUES (?, ?, ?, 'owner', ?, ?, ?)`,
+		"owner:"+eventID, eventID, organizerID, organizerID, now, now)
+	require.NoError(t, err)
 
 	attendeeID := "att-" + rsvpToken
 	_, err = db.ExecContext(ctx,

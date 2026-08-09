@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // Handler provides HTTP handlers for the public unsubscribe endpoints.
@@ -78,7 +79,7 @@ type unsubscribeRequest struct {
 // suppression. It is idempotent and always reports success for a valid token.
 func (h *Handler) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	var req unsubscribeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

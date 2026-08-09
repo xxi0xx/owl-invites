@@ -2,16 +2,37 @@ package auth
 
 import "time"
 
-// Organizer represents a user who creates and manages events.
-type Organizer struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Timezone  string    `json:"timezone"`
-	IsAdmin   bool      `json:"isAdmin"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+// User is the persistent Owl Invites identity. The Name and IsAdmin fields are
+// retained as a compatibility surface for the existing organizer-oriented API
+// while event ownership is migrated to memberships.
+type User struct {
+	ID              string     `json:"id"`
+	Email           string     `json:"email"`
+	NormalizedEmail string     `json:"-"`
+	Name            string     `json:"name"`
+	Timezone        string     `json:"timezone"`
+	InstanceRole    string     `json:"instanceRole"`
+	Status          string     `json:"status"`
+	IsAdmin         bool       `json:"isAdmin"`
+	InvitedByUserID *string    `json:"invitedByUserId,omitempty"`
+	ActivatedAt     *time.Time `json:"activatedAt,omitempty"`
+	LastLoginAt     *time.Time `json:"lastLoginAt,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
+
+// Organizer is a temporary source-compatible alias. New identity and
+// administration code should use User.
+type Organizer = User
+
+const (
+	InstanceRoleAdmin = "admin"
+	InstanceRoleUser  = "user"
+
+	UserStatusInvited  = "invited"
+	UserStatusActive   = "active"
+	UserStatusDisabled = "disabled"
+)
 
 // UpdateProfileRequest is the request body for updating an organizer's profile.
 type UpdateProfileRequest struct {

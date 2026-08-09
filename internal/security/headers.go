@@ -31,7 +31,10 @@ func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
 			h := w.Header()
 			h.Set("X-Content-Type-Options", "nosniff")
 			h.Set("X-Frame-Options", "DENY")
-			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			// Capability URLs introduced by Owl Invites must never be forwarded as
+			// referrers. Applying the stricter policy globally also protects current
+			// magic-link and RSVP-token routes.
+			h.Set("Referrer-Policy", "no-referrer")
 			h.Set("Cross-Origin-Opener-Policy", "same-origin")
 			if isSecureRequest(r) {
 				h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")

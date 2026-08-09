@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import type { InstanceStats, ApiResponse } from '$lib/types';
+	import AdminNav from '$lib/components/admin/AdminNav.svelte';
 	import AppShell from '$lib/components/layout/AppShell.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 
@@ -69,8 +70,9 @@
 	<div class="space-y-8">
 		<div>
 			<h1 class="text-2xl font-bold font-display text-neutral-900">Instance Admin</h1>
-			<p class="text-sm text-neutral-500 mt-1">Aggregate statistics across the entire OpenRSVP instance. All data is anonymous.</p>
+			<p class="text-sm text-neutral-500 mt-1">Health and activity across this Owl Invites instance. All statistics are aggregate.</p>
 		</div>
+		<AdminNav active="overview" />
 
 		{#if loading}
 			<div class="flex items-center justify-center py-20">

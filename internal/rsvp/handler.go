@@ -15,6 +15,7 @@ import (
 
 	"github.com/yannkr/openrsvp/internal/calendar"
 	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/yannkr/openrsvp/internal/httpx"
 )
 
 // OrganizerFromCtx extracts the organizer ID from the request context.
@@ -26,22 +27,37 @@ type EventOwnershipChecker func(ctx context.Context, eventID, organizerID string
 
 // Handler holds HTTP handlers for RSVP endpoints.
 type Handler struct {
-	service         *Service
-	authMiddleware  func(http.Handler) http.Handler
-	organizerFrom   OrganizerFromCtx
-	checkEventOwner EventOwnershipChecker
-	logger          zerolog.Logger
+	service                   *Service
+	authMiddleware            func(http.Handler) http.Handler
+	organizerFrom             OrganizerFromCtx
+	checkEventOwner           EventOwnershipChecker
+	logger                    zerolog.Logger
+	legacyPublicWritesEnabled bool
+}
+
+// HandlerOption configures transitional RSVP handler behavior.
+type HandlerOption func(*Handler)
+
+// WithLegacyPublicWrites enables the pre-invitation-model public mutation
+// endpoints. It exists only for legacy unit coverage and migration tooling;
+// production wiring intentionally leaves these endpoints disabled.
+func WithLegacyPublicWrites() HandlerOption {
+	return func(h *Handler) { h.legacyPublicWritesEnabled = true }
 }
 
 // NewHandler creates a new RSVP Handler.
-func NewHandler(service *Service, authMiddleware func(http.Handler) http.Handler, organizerFrom OrganizerFromCtx, checkEventOwner EventOwnershipChecker, logger zerolog.Logger) *Handler {
-	return &Handler{
+func NewHandler(service *Service, authMiddleware func(http.Handler) http.Handler, organizerFrom OrganizerFromCtx, checkEventOwner EventOwnershipChecker, logger zerolog.Logger, opts ...HandlerOption) *Handler {
+	h := &Handler{
 		service:         service,
 		authMiddleware:  authMiddleware,
 		organizerFrom:   organizerFrom,
 		checkEventOwner: checkEventOwner,
 		logger:          logger,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // Routes returns a chi.Router with all RSVP routes mounted.
@@ -93,10 +109,14 @@ func (h *Handler) handleGetPublicInvite(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) handleSubmitRSVP(w http.ResponseWriter, r *http.Request) {
+	if !h.legacyPublicWritesEnabled {
+		h.writeLegacyPublicWriteDisabled(w)
+		return
+	}
 	shareToken := chi.URLParam(r, "shareToken")
 
 	var req RSVPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -140,10 +160,14 @@ func (h *Handler) handleGetByToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleUpdateByToken(w http.ResponseWriter, r *http.Request) {
+	if !h.legacyPublicWritesEnabled {
+		h.writeLegacyPublicWriteDisabled(w)
+		return
+	}
 	rsvpToken := chi.URLParam(r, "rsvpToken")
 
 	var req UpdateRSVPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -169,10 +193,14 @@ func (h *Handler) handleUpdateByToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleLookupRSVP(w http.ResponseWriter, r *http.Request) {
+	if !h.legacyPublicWritesEnabled {
+		h.writeLegacyPublicWriteDisabled(w)
+		return
+	}
 	shareToken := chi.URLParam(r, "shareToken")
 
 	var req LookupRSVPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
@@ -198,6 +226,15 @@ func (h *Handler) handleLookupRSVP(w http.ResponseWriter, r *http.Request) {
 			"message": "If you have an RSVP, you'll receive an email shortly with a link to manage it.",
 		},
 	})
+}
+
+func (h *Handler) writeLegacyPublicWriteDisabled(w http.ResponseWriter) {
+	writeError(
+		w,
+		http.StatusGone,
+		"legacy_rsvp_disabled",
+		"Legacy public RSVP changes are disabled while the private invitation model is being introduced.",
+	)
 }
 
 func (h *Handler) handleCalendarDownload(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +391,7 @@ func (h *Handler) handleUpdateAttendee(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req OrganizerUpdateAttendeeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := httpx.DecodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}

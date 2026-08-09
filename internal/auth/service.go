@@ -64,11 +64,23 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 		return fmt.Errorf("find organizer: %w", err)
 	}
 
+	if organizer == nil && !s.cfg.AllowSignups {
+		// Preserve the same public response as an existing account. Account
+		// creation through administrator/co-host invitations is handled by a
+		// separate, explicit flow and is not controlled by AllowSignups.
+		return nil
+	}
+
 	if organizer == nil {
 		organizer, err = s.store.CreateOrganizer(ctx, email)
 		if err != nil {
 			return fmt.Errorf("create organizer: %w", err)
 		}
+	}
+	if organizer.Status != UserStatusActive {
+		// Invited users must consume their account invitation, and disabled
+		// users must not receive a login credential. Keep the response generic.
+		return nil
 	}
 
 	// Generate 32-byte random token.
@@ -159,7 +171,19 @@ func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*AuthRe
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := s.store.MarkMagicLinkUsedTx(ctx, tx, ml.ID); err != nil {
+	organizer, err := s.store.FindOrganizerByIDTx(ctx, tx, ml.OrganizerID)
+	if err != nil {
+		return nil, fmt.Errorf("find user: %w", err)
+	}
+	if organizer == nil || organizer.Status != UserStatusActive {
+		return nil, ErrInvalidToken
+	}
+
+	loginAt := time.Now().UTC()
+	if err := s.store.MarkMagicLinkUsedTx(ctx, tx, ml.ID, loginAt); err != nil {
+		if errors.Is(err, ErrInvalidToken) {
+			return nil, ErrInvalidToken
+		}
 		return nil, fmt.Errorf("mark magic link used: %w", err)
 	}
 
@@ -168,23 +192,16 @@ func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*AuthRe
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 
-	organizer, err := s.store.FindOrganizerByIDTx(ctx, tx, ml.OrganizerID)
-	if err != nil {
-		return nil, fmt.Errorf("find organizer: %w", err)
+	if err := s.store.TouchLastLoginTx(ctx, tx, ml.OrganizerID, loginAt); err != nil {
+		if errors.Is(err, ErrInvalidToken) {
+			return nil, ErrInvalidToken
+		}
+		return nil, fmt.Errorf("record login: %w", err)
 	}
+	organizer.LastLoginAt = &loginAt
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
-	}
-
-	// Sync admin status from ADMIN_EMAILS env var on every login.
-	shouldBeAdmin := s.cfg.IsAdminEmail(organizer.Email)
-	if organizer.IsAdmin != shouldBeAdmin {
-		if err := s.store.SetAdminStatus(ctx, organizer.ID, shouldBeAdmin); err != nil {
-			s.logger.Error().Err(err).Str("organizer_id", organizer.ID).Msg("failed to sync admin status")
-		} else {
-			organizer.IsAdmin = shouldBeAdmin
-		}
 	}
 
 	return &AuthResponse{
@@ -218,14 +235,9 @@ func (s *Service) ValidateSession(ctx context.Context, rawToken string) (*Organi
 		return nil, fmt.Errorf("find organizer: %w", err)
 	}
 
-	// Sync admin status on every session validation so that changes to
-	// ADMIN_EMAILS take effect without requiring re-login.
-	if shouldBeAdmin := s.cfg.IsAdminEmail(organizer.Email); organizer.IsAdmin != shouldBeAdmin {
-		if err := s.store.SetAdminStatus(ctx, organizer.ID, shouldBeAdmin); err != nil {
-			s.logger.Error().Err(err).Str("organizer_id", organizer.ID).Msg("failed to sync admin status")
-		} else {
-			organizer.IsAdmin = shouldBeAdmin
-		}
+	if organizer == nil || organizer.Status != UserStatusActive {
+		_ = s.store.DeleteSession(ctx, session.ID)
+		return nil, ErrSessionNotFound
 	}
 
 	return organizer, nil

@@ -2,6 +2,13 @@
 
 A self-hosted, privacy-first alternative to Evite. Create beautiful event invitations, manage RSVPs, and communicate with guests — all without ads or data tracking. Perfect for birthday parties, gatherings, and celebrations.
 
+> [!WARNING]
+> **Owl Invites is in staged redevelopment. Gate 1 is a development milestone,
+> not a production release.** Legacy RSVP mutation is intentionally disabled
+> pending the Gate 2 invitation-domain redesign. No Owl Invites production
+> container image has been published; do not deploy an upstream OpenRSVP image
+> or an unpinned `:latest` tag as a substitute for this branch.
+
 ## ✨ Features
 
 - 🎨 **Beautiful Invitation Templates** — 5 customizable themes (Balloon Party, Confetti, Unicorn Magic, Superhero, Garden Picnic) with custom colors, fonts, and text
@@ -16,32 +23,34 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 - 📊 **Email Tracking** — Delivery status, open tracking, bounce/complaint handling, and per-event email statistics
 - ✉️ **Unsubscribe & Suppression** — One-click unsubscribe footer on reminder/message emails, with a suppression list that skips opted-out addresses
 - 🗣️ **Guest Feedback** — A "Report a problem" widget on public RSVP pages lets guests flag issues without logging in
-- 🧭 **Setup Wizard** — First-run wizard for instance name, default timezone, sign-up policy, and support email
+- 🧭 **Secure Setup Wizard** — One-time, environment-token-authorized creation of the first administrator and instance settings
 - 📦 **Data Export & Account Deletion** — Organizers can export all their data and permanently delete their account from an Account settings page
 - 🛡️ **Privacy by Design** — Data auto-deletes after a configurable retention period (default 30 days post-event)
 - 🤖 **Bot Protection** — Honeypot fields and IP-based rate limiting
-- 📈 **Instance Admin** — Aggregate dashboard for instance-wide statistics (events, guests, RSVP rates, notification health, feature adoption) — privacy-first, no individual tracking
+- 📈 **Instance Admin** — User invitations, role/status controls, aggregate statistics, and a focused audit trail for sensitive changes
 - 🏠 **Self-Hosted** — Single Docker container, you own your data
 - 🗄️ **SQLite or PostgreSQL** — SQLite by default; PostgreSQL is fully supported and CI-tested. The full test suite runs against both
 
 ## 🚀 Quick Start
 
-### Docker One-Liner
+### Gate 1 local container build
+
+Run this from a checkout of `codex/gate-1-foundation`:
 
 ```bash
-docker run -d -p 8080:8080 -v openrsvp-data:/data -e BASE_URL=http://localhost:8080 ghcr.io/yannkr/openrsvp:latest
-```
-
-Visit http://localhost:8080 and you're good to go! 🎊
-
-### Docker Compose
-
-```bash
-git clone https://github.com/yannkr/openrsvp.git
-cd openrsvp
 cp .env.example .env
-docker compose up -d
+# Set OWL_INVITES_BOOTSTRAP_TOKEN in .env to a long random secret.
+docker compose up -d --build
 ```
+
+Visit http://localhost:8091, enter the same bootstrap token in the first-run
+wizard, and create the first administrator. After setup succeeds, remove the
+token from the container environment; the backend permanently closes the
+bootstrap endpoint either way.
+
+The local Compose stack builds the checked-out source and includes Mailpit;
+captured development email is available at http://localhost:8025. This is a
+development/review configuration, not production deployment guidance.
 
 ### With PostgreSQL
 
@@ -82,12 +91,24 @@ The Svelte dev server at http://localhost:5173 proxies API requests to the Go ba
 # Build everything (frontend + backend)
 make build
 
-# Output: bin/openrsvp
+# Outputs: bin/openrsvp and bin/owl-invites
+```
+
+The generated Gate 1 API client is checked during `npm run check`. The real
+browser magic-link acceptance test expects a running application and Mailpit:
+
+```bash
+cd web
+npm run test:e2e
 ```
 
 ### 🗄️ Database & Migrations
 
 The full test suite runs against both SQLite and PostgreSQL in CI. Migrations live in per-dialect directories, `internal/database/migrations/sqlite` and `internal/database/migrations/postgres`, because some schema changes (for example CHECK-constraint edits) differ between the two engines. When you add a migration, add it to both directories.
+
+See [Gate 1 foundation](docs/gate-1-foundation.md) for the resulting schema,
+authorization model, API contract, migration behavior, and security review
+boundary.
 
 ### 📁 Project Structure
 
@@ -134,7 +155,9 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 | `FEEDBACK_EMAIL` | _(empty)_ | Email address to receive feedback (fallback) |
 | `TRUSTED_PROXIES` | _(empty)_ | Comma-separated CIDR ranges of trusted reverse proxies (e.g. `10.0.0.0/8,172.16.0.0/12`). When set, `X-Forwarded-For` / `X-Real-IP` headers are trusted to determine client IP. When empty (default), only `RemoteAddr` is used, which prevents IP spoofing. **Set this when running behind a reverse proxy (Nginx, Caddy, etc.)** |
 | `MAX_COHOSTS_PER_EVENT` | `10` | Maximum number of co-hosts allowed per event |
-| `ADMIN_EMAILS` | _(empty)_ | Comma-separated list of instance admin emails (e.g. `admin@example.com,ops@example.com`). Admin status is synced on every page load — add or remove emails and changes take effect immediately without requiring re-login |
+| `ALLOW_SIGNUPS` | `false` | Allows unsolicited organizer account creation. Admin invitations, co-host invitations, and acceptance of issued invitations remain available when this is off |
+| `OWL_INVITES_BOOTSTRAP_TOKEN` | _(empty)_ | One-time, environment-only authorization for creating the first persistent administrator. Required for fresh Internet-reachable installations; never stored in the database |
+| `OWL_INVITES_ACCOUNT_INVITE_EXPIRY` | `72h` | Lifetime of administrator-issued account invitation capabilities |
 
 ### 📧 Email Providers
 
@@ -147,6 +170,26 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 | `SMTP_USERNAME` | SMTP username |
 | `SMTP_PASSWORD` | SMTP password |
 | `SMTP_FROM` | Sender email address |
+
+### Host-side administrator recovery
+
+After first-run setup is committed, the bootstrap endpoint stays closed. If
+all administrators become unavailable, run the Owl Invites CLI on a trusted
+host with the same database configuration:
+
+```bash
+go run ./cmd/owl-invites admin promote --email operator@example.com
+```
+
+The release container also includes the CLI:
+
+```bash
+docker compose exec openrsvp owl-invites admin promote --email operator@example.com
+```
+
+The user must already exist. The command activates and promotes that identity
+and records an `emergency_role_recovery` entry with a CLI actor in the minimal
+admin audit trail. It does not read or reuse `OWL_INVITES_BOOTSTRAP_TOKEN`.
 
 **SendGrid** (`NOTIFICATION_EMAIL_PROVIDER=sendgrid`):
 
@@ -228,9 +271,9 @@ All API endpoints are under `/api/v1`. The server also provides:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/rsvp/public/:shareToken` | Submit RSVP (public) |
+| POST | `/api/v1/rsvp/public/:shareToken` | Disabled during the secure invitation-model transition (`410 Gone`) |
 | GET | `/api/v1/rsvp/public/token/:rsvpToken` | Get RSVP (public) |
-| PUT | `/api/v1/rsvp/public/token/:rsvpToken` | Update RSVP (public) |
+| PUT/PATCH | `/api/v1/rsvp/public/token/:rsvpToken` | Disabled during the secure invitation-model transition (`410 Gone`) |
 | GET | `/api/v1/rsvp/event/:eventId` | List RSVPs |
 | GET | `/api/v1/rsvp/event/:eventId/stats` | RSVP stats |
 | DELETE | `/api/v1/rsvp/event/:eventId/:attendeeId` | Remove attendee |
@@ -306,8 +349,6 @@ All API endpoints are under `/api/v1`. The server also provides:
 | GET | `/api/v1/notifications/track/open/:logId` | Tracking pixel (public) |
 | GET | `/api/v1/notifications/event/:eventId/stats` | Email delivery stats (organizer) |
 | GET | `/api/v1/notifications/event/:eventId` | Delivery log (organizer) |
-| POST | `/api/v1/notifications/webhooks/sendgrid` | Inbound SendGrid delivery events (public) |
-| POST | `/api/v1/notifications/webhooks/ses` | Inbound SES delivery events (public) |
 
 Open tracking is gated by `EMAIL_OPEN_TRACKING_ENABLED`. The inbound delivery webhooks record bounces and complaints; provider signature verification is a tracked follow-up (see [Known limitations](#known-limitations)).
 
@@ -330,21 +371,33 @@ Non-secret instance settings (instance name, default timezone, allow-signups, su
 
 ## 🏠 Self-Hosting Guide
 
-### 🐳 Docker (recommended)
+### 🐳 Docker
 
-The fastest way to get a production instance running:
+> [!CAUTION]
+> Gate 1 has no published Owl Invites production image and is not approved for
+> production deployment. The example below builds a review image from the
+> current checkout; it does not pull an image from GHCR.
+
+Build a local, explicitly named image from this branch:
+
+```bash
+docker build --tag owl-invites:gate-1-review .
+```
+
+For an isolated review deployment, use that exact local tag:
 
 ```yaml
 # docker-compose.yml
 services:
   openrsvp:
-    image: ghcr.io/yannkr/openrsvp:latest
+    image: owl-invites:gate-1-review
     restart: unless-stopped
     expose:
       - 8080
     environment:
       ENV: production
       BASE_URL: https://rsvp.yourdomain.com
+      OWL_INVITES_BOOTSTRAP_TOKEN: replace-with-a-long-random-secret
       DB_DSN: /data/openrsvp.db
       UPLOADS_DIR: /data/uploads
       SMTP_HOST: smtp.yourdomain.com
@@ -485,7 +538,7 @@ If you deployed `docker-compose.postgres.yml` **before v1.5.1**, rotate your Pos
 - Repo hygiene: tooling directories moved into a tracked `.gitignore`, vendored e2e `node_modules` untracked, `.dockerignore` tightened
 
 **Features:**
-- Email delivery tracking is now functional. An open-tracking pixel is embedded in HTML emails (gated by `EMAIL_OPEN_TRACKING_ENABLED`), inbound SendGrid/SES delivery webhooks (`POST /api/v1/notifications/webhooks/sendgrid|ses`) record bounces and complaints, and the stats dashboard shows real numbers instead of always-zero. Provider webhook signature verification is a documented follow-up
+- Email open tracking remains available when enabled. Inbound SendGrid/SES delivery webhook parsers are retained but are not publicly mounted until provider signature, timestamp, replay, and message-correlation verification is implemented.
 - Email unsubscribe and suppression list. Reminder and message emails carry an unsubscribe footer, a public token-based unsubscribe page lives at `/unsubscribe`, and suppressed addresses are skipped before sending. Migration 000030
 - Account deletion and data export. Organizers can export all their data (`GET /api/v1/auth/me/export`) and permanently delete their account and all associated data (`DELETE /api/v1/auth/me`) from a new Account settings page (`/account`)
 - Setup wizard. DB-backed non-secret instance settings (instance name, default timezone, allow-signups, support email) via `/setup`, stored in `instance_config` (migration 000031) and overlaid on the environment config at startup. Secrets remain environment-only

@@ -1,6 +1,8 @@
 BINARY_NAME := openrsvp
+CLI_NAME := owl-invites
 BUILD_DIR := ./bin
 CMD_DIR := ./cmd/openrsvp
+CLI_CMD_DIR := ./cmd/owl-invites
 CGO_ENABLED := 1
 
 .PHONY: all build dev test clean lint lint-routes frontend embed
@@ -20,6 +22,8 @@ embed: frontend
 build: embed
 	@echo "Building $(BINARY_NAME)..."
 	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	@echo "Building $(CLI_NAME) recovery CLI..."
+	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-s -w" -o $(BUILD_DIR)/$(CLI_NAME) $(CLI_CMD_DIR)
 
 dev:
 	@echo "Running in development mode..."

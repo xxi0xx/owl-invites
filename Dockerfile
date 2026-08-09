@@ -23,12 +23,14 @@ RUN rm -rf internal/server/frontend && \
     cp -r /app/web/build/* internal/server/frontend/ 2>/dev/null || true
 COPY --from=frontend /app/web/build ./internal/server/frontend/
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /openrsvp ./cmd/openrsvp
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /owl-invites ./cmd/owl-invites
 
 # Stage 3: Final image
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata && \
     addgroup -S openrsvp && adduser -S openrsvp -G openrsvp
 COPY --from=backend /openrsvp /usr/local/bin/openrsvp
+COPY --from=backend /owl-invites /usr/local/bin/owl-invites
 RUN mkdir -p /data /data/uploads && chown -R openrsvp:openrsvp /data
 USER openrsvp
 ENV DB_DSN=/data/openrsvp.db

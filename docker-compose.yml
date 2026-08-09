@@ -1,6 +1,8 @@
 services:
   openrsvp:
     build: .
+    depends_on:
+      - mailpit
     ports:
       - "8091:8080"
     volumes:
@@ -14,16 +16,16 @@ services:
       - NOTIFICATION_EMAIL_PROVIDER=smtp
       - SMTP_HOST=mailpit
       - SMTP_PORT=1025
-      - SMTP_FROM=noreply@openrsvp.local
+      - SMTP_FROM=noreply@owl-invites.local
       - BASE_URL=http://localhost:8091
       - FEEDBACK_EMAIL=feedback@openrsvp.local
-    networks:
-      - openrsvp-net
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.30.0
+    ports:
+      - "127.0.0.1:8025:8025"
     restart: unless-stopped
 
 volumes:
   openrsvp-data:
-
-networks:
-  openrsvp-net:
-    external: true

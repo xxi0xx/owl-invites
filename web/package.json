@@ -12,6 +12,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "npm run check:api && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test:e2e": "playwright test --config=playwright.e2e.config.ts",
 		"test:visual": "playwright test",
 		"test:visual:update": "playwright test --update-snapshots"
 	},

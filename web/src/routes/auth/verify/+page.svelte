@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { goto, replaceState } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { currentUser } from '$lib/stores/auth';
 	import { toast } from '$lib/stores/toast';
@@ -12,7 +11,7 @@
 	let error = $state('');
 
 	onMount(async () => {
-		const token = $page.url.searchParams.get('token');
+		const token = new URL(window.location.href).searchParams.get('token');
 
 		if (!token) {
 			error = 'No verification token found. Please request a new magic link.';
@@ -22,7 +21,7 @@
 
 		// Strip the raw token from the URL/history before doing anything else,
 		// so it does not linger in browser history.
-		replaceState('/auth/verify', {});
+		window.history.replaceState({}, '', '/auth/verify');
 
 		try {
 			const result = await api.operation('verifyMagicLink', { body: { token } });

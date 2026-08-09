@@ -44,6 +44,17 @@ test('fresh instance bootstraps and an existing user signs in through a Mailpit 
 		expect(magicLink).not.toBe('');
 	}).toPass({ timeout: 15_000, intervals: [250, 500, 1_000] });
 
+	// A stale anonymous auth probe used to race the successful exchange and
+	// overwrite its authenticated store. Delay any such probe so the regression
+	// is deterministic instead of timing-dependent.
+	let delayedAuthProbe = false;
+	await page.route('**/api/v1/auth/me', async (route) => {
+		if (!delayedAuthProbe) {
+			delayedAuthProbe = true;
+			await new Promise((resolve) => setTimeout(resolve, 750));
+		}
+		await route.continue();
+	});
 	await page.goto(magicLink);
 	await expect(page).toHaveURL(/\/events$/);
 	await expect(page.getByRole('heading', { name: 'My Events' })).toBeVisible();

@@ -6,6 +6,14 @@
 	import Toast from '$lib/components/ui/Toast.svelte';
 
 	onMount(async () => {
+		// Capability exchange routes establish authentication themselves. Starting
+		// an anonymous /auth/me probe here can race their successful exchange and
+		// overwrite the newly authenticated store with null.
+		if (window.location.pathname === '/auth/verify' || window.location.pathname === '/auth/accept-invite') {
+			$isLoading = false;
+			return;
+		}
+
 		try {
 			const user = await api.operation('getCurrentUser');
 			$currentUser = user;

@@ -16,11 +16,11 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 - 📊 **Email Tracking** — Delivery status, open tracking, bounce/complaint handling, and per-event email statistics
 - ✉️ **Unsubscribe & Suppression** — One-click unsubscribe footer on reminder/message emails, with a suppression list that skips opted-out addresses
 - 🗣️ **Guest Feedback** — A "Report a problem" widget on public RSVP pages lets guests flag issues without logging in
-- 🧭 **Setup Wizard** — First-run wizard for instance name, default timezone, sign-up policy, and support email
+- 🧭 **Secure Setup Wizard** — One-time, environment-token-authorized creation of the first administrator and instance settings
 - 📦 **Data Export & Account Deletion** — Organizers can export all their data and permanently delete their account from an Account settings page
 - 🛡️ **Privacy by Design** — Data auto-deletes after a configurable retention period (default 30 days post-event)
 - 🤖 **Bot Protection** — Honeypot fields and IP-based rate limiting
-- 📈 **Instance Admin** — Aggregate dashboard for instance-wide statistics (events, guests, RSVP rates, notification health, feature adoption) — privacy-first, no individual tracking
+- 📈 **Instance Admin** — User invitations, role/status controls, aggregate statistics, and a focused audit trail for sensitive changes
 - 🏠 **Self-Hosted** — Single Docker container, you own your data
 - 🗄️ **SQLite or PostgreSQL** — SQLite by default; PostgreSQL is fully supported and CI-tested. The full test suite runs against both
 
@@ -29,10 +29,16 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 ### Docker One-Liner
 
 ```bash
-docker run -d -p 8080:8080 -v openrsvp-data:/data -e BASE_URL=http://localhost:8080 ghcr.io/yannkr/openrsvp:latest
+docker run -d -p 8080:8080 -v openrsvp-data:/data \
+  -e BASE_URL=http://localhost:8080 \
+  -e OWL_INVITES_BOOTSTRAP_TOKEN=replace-with-a-long-random-secret \
+  ghcr.io/yannkr/openrsvp:latest
 ```
 
-Visit http://localhost:8080 and you're good to go! 🎊
+Visit http://localhost:8080, enter the same bootstrap token in the first-run
+wizard, and create the first administrator. After setup succeeds, remove the
+token from the container environment; the backend permanently closes the
+bootstrap endpoint either way.
 
 ### Docker Compose
 
@@ -42,6 +48,10 @@ cd openrsvp
 cp .env.example .env
 docker compose up -d
 ```
+
+Set `OWL_INVITES_BOOTSTRAP_TOKEN` in `.env` before the first start. The local
+Compose stack includes Mailpit; captured development email is available at
+http://localhost:8025.
 
 ### With PostgreSQL
 
@@ -82,12 +92,24 @@ The Svelte dev server at http://localhost:5173 proxies API requests to the Go ba
 # Build everything (frontend + backend)
 make build
 
-# Output: bin/openrsvp
+# Outputs: bin/openrsvp and bin/owl-invites
+```
+
+The generated Gate 1 API client is checked during `npm run check`. The real
+browser magic-link acceptance test expects a running application and Mailpit:
+
+```bash
+cd web
+npm run test:e2e
 ```
 
 ### 🗄️ Database & Migrations
 
 The full test suite runs against both SQLite and PostgreSQL in CI. Migrations live in per-dialect directories, `internal/database/migrations/sqlite` and `internal/database/migrations/postgres`, because some schema changes (for example CHECK-constraint edits) differ between the two engines. When you add a migration, add it to both directories.
+
+See [Gate 1 foundation](docs/gate-1-foundation.md) for the resulting schema,
+authorization model, API contract, migration behavior, and security review
+boundary.
 
 ### 📁 Project Structure
 
@@ -158,6 +180,12 @@ host with the same database configuration:
 
 ```bash
 go run ./cmd/owl-invites admin promote --email operator@example.com
+```
+
+The release container also includes the CLI:
+
+```bash
+docker compose exec openrsvp owl-invites admin promote --email operator@example.com
 ```
 
 The user must already exist. The command activates and promotes that identity

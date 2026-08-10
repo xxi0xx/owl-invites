@@ -508,7 +508,17 @@ docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
   time-limited session for the same household until the organizer rotates or
   revokes the invitation. They do not carry an independent expiry timestamp.
 - SMS providers remain in the inherited notification subsystem, but Gate 2
-  invitation delivery and recovery are email-only.
+  invitation delivery and recovery are email-only. Open enrollment requires a
+  valid email destination and stores `email` as its delivery method. Private
+  invitations may retain phone/SMS as organizer-managed contact metadata, but
+  `send=true`, explicit delivery, recovery, and household-link broadcasts do
+  not claim or perform SMS delivery.
+- Invitation persistence and email delivery have separate outcomes. After a
+  private invitation or open-enrollment household commits, a later SMTP failure
+  is reported as a nonfatal `delivery.failed` result and logged/tracked; it does
+  not undo creation, hide the open-enrollment browser session, or consume
+  capacity through an automatic retry. Organizers can retry the explicit
+  delivery endpoint. Gate 2 intentionally has no queue/outbox subsystem.
 - Legacy CSV attendee import/export, guestbook/comments, waitlist behavior, and
   guest-to-organizer message threads are disabled and have no mounted API.
 - Invite-card customization remains an organizer tool but is not yet included

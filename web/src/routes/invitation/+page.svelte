@@ -7,6 +7,7 @@
 	let household = $state<InvitationHousehold | null>(null);
 	let loading = $state(true);
 	let error = $state('');
+	let deliveryWarning = $state('');
 	let saving = $state(false);
 	let saved = $state(false);
 	let attendance = $state<Record<string, InvitationAttendance>>({});
@@ -21,7 +22,11 @@
 		{ value: 'declined', label: 'Declined' }
 	];
 
-	onMount(load);
+	onMount(() => {
+		deliveryWarning = sessionStorage.getItem('owl_invitation_delivery_warning') ?? '';
+		sessionStorage.removeItem('owl_invitation_delivery_warning');
+		void load();
+	});
 
 	async function load() {
 		loading = true;
@@ -117,6 +122,7 @@
 			</header>
 
 			{#if error}<div class="rounded-md bg-error-light p-4 text-sm text-error">{error}</div>{/if}
+			{#if deliveryWarning}<div class="rounded-md border border-warning/30 bg-warning-light p-4 text-sm text-warning">{deliveryWarning}</div>{/if}
 			{#if saved}<div class="rounded-md bg-success-light p-4 text-sm text-success">Your response was saved.</div>{/if}
 
 			<section class="rounded-xl border border-neutral-200 bg-white p-7 shadow-sm space-y-5">
@@ -165,4 +171,3 @@
 		</form>
 	{/if}
 </main>
-

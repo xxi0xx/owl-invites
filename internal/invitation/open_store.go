@@ -67,10 +67,10 @@ func (s *Store) RotateOpen(ctx context.Context, eventID string) (*OpenEnrollment
 
 // EnrollOpen creates a new invitation without performing any contact lookup.
 // The locked enrollment row serializes capacity consumption.
-func (s *Store) EnrollOpen(ctx context.Context, config *OpenEnrollmentConfig, invitation *Invitation, guests []*Guest, sessionHash string, sessionExpiresAt time.Time) error {
+func (s *Store) EnrollOpen(ctx context.Context, config *OpenEnrollmentConfig, invitation *Invitation, guests []*Guest, sessionHash string, sessionExpiresAt time.Time) (*Response, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin open enrollment: %w", err)
+		return nil, fmt.Errorf("begin open enrollment: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	nowTime := time.Now().UTC()
@@ -80,11 +80,11 @@ func (s *Store) EnrollOpen(ctx context.Context, config *OpenEnrollmentConfig, in
 		WHERE id = ? AND access_id = ? AND token_version = ? AND enabled = ?
 		AND revoked_at IS NULL`, config.ID, config.AccessID, config.TokenVersion, true)
 	if err != nil {
-		return fmt.Errorf("lock open enrollment: %w", err)
+		return nil, fmt.Errorf("lock open enrollment: %w", err)
 	}
 	changed, _ := result.RowsAffected()
 	if changed != 1 {
-		return ErrInvalidCapability
+		return nil, ErrInvalidCapability
 	}
 
 	var opensAt, closesAt sql.NullString
@@ -93,27 +93,27 @@ func (s *Store) EnrollOpen(ctx context.Context, config *OpenEnrollmentConfig, in
 	if err := tx.QueryRowContext(ctx, `SELECT opens_at, closes_at, max_party_size,
 		capacity FROM open_enrollments WHERE id = ?`, config.ID).Scan(&opensAt, &closesAt,
 		&maxParty, &capacity); err != nil {
-		return fmt.Errorf("load open enrollment limits: %w", err)
+		return nil, fmt.Errorf("load open enrollment limits: %w", err)
 	}
 	if len(guests) < 1 || len(guests) > maxParty {
-		return ErrAllowance
+		return nil, ErrAllowance
 	}
 	if opensAt.Valid {
 		value, err := parseDBTime(opensAt.String)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if nowTime.Before(value) {
-			return ErrInvalidCapability
+			return nil, ErrInvalidCapability
 		}
 	}
 	if closesAt.Valid {
 		value, err := parseDBTime(closesAt.String)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !nowTime.Before(value) {
-			return ErrInvalidCapability
+			return nil, ErrInvalidCapability
 		}
 	}
 	if capacity.Valid {
@@ -122,10 +122,10 @@ func (s *Store) EnrollOpen(ctx context.Context, config *OpenEnrollmentConfig, in
 			JOIN invitations i ON i.id = g.invitation_id
 			WHERE i.open_enrollment_id = ? AND i.revoked_at IS NULL
 			AND g.removed_at IS NULL`, config.ID).Scan(&allocated); err != nil {
-			return fmt.Errorf("count open enrollment capacity: %w", err)
+			return nil, fmt.Errorf("count open enrollment capacity: %w", err)
 		}
 		if allocated+len(guests) > int(capacity.Int64) {
-			return ErrCapacity
+			return nil, ErrCapacity
 		}
 	}
 
@@ -148,38 +148,45 @@ func (s *Store) EnrollOpen(ctx context.Context, config *OpenEnrollmentConfig, in
 		phone, normalizedPhone, invitation.PreferredDeliveryMethod, config.ID,
 		invitation.AccessID, now, now)
 	if err != nil {
-		return fmt.Errorf("create open invitation: %w", err)
+		return nil, fmt.Errorf("create open invitation: %w", err)
 	}
 	responseID := uuid.Must(uuid.NewV7()).String()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO rsvp_responses (
 		id, invitation_id, version, created_at, updated_at
 	) VALUES (?, ?, 1, ?, ?)`, responseID, invitation.ID, now, now); err != nil {
-		return fmt.Errorf("create open response: %w", err)
+		return nil, fmt.Errorf("create open response: %w", err)
 	}
 	for _, guest := range guests {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO guests (
 			id, invitation_id, name, origin, sort_order, created_at, updated_at
 		) VALUES (?, ?, ?, 'assigned', ?, ?, ?)`, guest.ID, invitation.ID,
 			guest.Name, guest.SortOrder, now, now); err != nil {
-			return fmt.Errorf("create open guest: %w", err)
+			return nil, fmt.Errorf("create open guest: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO guest_responses (
 			id, rsvp_response_id, guest_id, attendance, created_at, updated_at
 		) VALUES (?, ?, ?, 'pending', ?, ?)`, uuid.Must(uuid.NewV7()).String(),
 			responseID, guest.ID, now, now); err != nil {
-			return fmt.Errorf("create open guest response: %w", err)
+			return nil, fmt.Errorf("create open guest response: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO invitation_sessions (
 		id, invitation_id, token_hash, issued_token_version, expires_at, created_at
 	) VALUES (?, ?, ?, 1, ?, ?)`, uuid.Must(uuid.NewV7()).String(), invitation.ID,
 		sessionHash, sessionExpiresAt.UTC().Format(time.RFC3339Nano), now); err != nil {
-		return fmt.Errorf("create open invitation session: %w", err)
+		return nil, fmt.Errorf("create open invitation session: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit open enrollment: %w", err)
+		return nil, fmt.Errorf("commit open enrollment: %w", err)
 	}
-	return nil
+	invitation.CreatedAt, invitation.UpdatedAt = nowTime, nowTime
+	for _, guest := range guests {
+		guest.InvitationID = invitation.ID
+		guest.Attendance = AttendancePending
+		guest.CreatedAt, guest.UpdatedAt = nowTime, nowTime
+	}
+	return &Response{ID: responseID, InvitationID: invitation.ID, Version: 1,
+		CreatedAt: nowTime, UpdatedAt: nowTime}, nil
 }
 
 func scanOpenEnrollment(row *sql.Row) (*OpenEnrollmentConfig, error) {

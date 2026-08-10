@@ -16,6 +16,10 @@ const (
 
 	QuestionScopeInvitation = "invitation"
 	QuestionScopeGuest      = "guest"
+
+	DeliveryNotRequested = "not_requested"
+	DeliverySent         = "sent"
+	DeliveryFailed       = "failed"
 )
 
 // Invitation is the household and capability boundary for an event. Contact
@@ -115,9 +119,19 @@ type CreateRequest struct {
 }
 
 type CreateResult struct {
-	Invitation *Invitation `json:"invitation"`
-	Guests     []*Guest    `json:"guests"`
-	AccessURL  string      `json:"accessUrl,omitempty"`
+	Invitation *Invitation    `json:"invitation"`
+	Guests     []*Guest       `json:"guests"`
+	AccessURL  string         `json:"accessUrl,omitempty"`
+	Delivery   DeliveryResult `json:"delivery"`
+}
+
+// DeliveryResult reports the delivery attempt separately from the resource
+// creation that preceded it. A failed post-commit attempt is nonfatal and the
+// underlying provider error is available only to the server log.
+type DeliveryResult struct {
+	Status  string `json:"status"`
+	Warning string `json:"warning,omitempty"`
+	err     error
 }
 
 type AdditionalGuestInput struct {

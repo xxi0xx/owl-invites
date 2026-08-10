@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
+	import type { InvitationDeliveryResult } from '$lib/api/generated';
 	import Button from '$lib/components/ui/Button.svelte';
 	import { datetimeLocalToUTC, utcToDatetimeLocal } from '$lib/utils/dates';
 	import type { ApiError, Event, InvitationHousehold } from '$lib/types';
@@ -9,6 +10,7 @@
 	let households = $state<InvitationHousehold[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	let deliveryWarning = $state('');
 	let label = $state('');
 	let email = $state('');
 	let names = $state('');
@@ -64,8 +66,9 @@
 		submitEvent.preventDefault();
 		saving = true;
 		error = '';
+		deliveryWarning = '';
 		try {
-			const response = await api.post<{ data: { accessUrl: string } }>(`/events/${eventId}/invitations`, {
+			const response = await api.post<{ data: { accessUrl: string; delivery: InvitationDeliveryResult } }>(`/events/${eventId}/invitations`, {
 				label,
 				contactEmail: email,
 				preferredDeliveryMethod: 'email',
@@ -74,6 +77,7 @@
 				send
 			});
 			lastAccessURL = response.data.accessUrl;
+			deliveryWarning = response.data.delivery.warning ?? '';
 			label = ''; email = ''; names = ''; allowance = 0;
 			await load();
 		} catch (caught) {
@@ -145,6 +149,7 @@
 <main class="mx-auto max-w-6xl space-y-8 px-6 py-8">
 	<header class="flex flex-wrap items-center justify-between gap-4"><div><a href="/events" class="text-sm text-primary">← Back to events</a><h1 class="mt-2 text-3xl font-semibold">Invitations</h1>{#if currentEvent}<p class="text-sm font-medium text-neutral-700">{currentEvent.title}</p>{/if}<p class="mt-1 text-sm text-neutral-600">Each invitation is an isolated household and security boundary.</p></div><div class="flex gap-2"><Button variant="outline" href="/events/{eventId}/edit">Edit event</Button><Button href="/events/{eventId}/messages">Message households</Button></div></header>
 	{#if error}<div class="rounded-md bg-error-light p-4 text-sm text-error">{error}</div>{/if}
+	{#if deliveryWarning}<div class="rounded-md border border-warning/30 bg-warning-light p-4 text-sm text-warning">{deliveryWarning}</div>{/if}
 	{#if lastAccessURL}<div class="rounded-md border border-warning/30 bg-warning-light p-4"><p class="text-sm font-medium">Copy this private link now. Treat it as a credential.</p><code class="mt-2 block break-all text-xs">{lastAccessURL}</code></div>{/if}
 
 	<div class="grid gap-8 lg:grid-cols-2">

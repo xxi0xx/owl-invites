@@ -160,10 +160,16 @@ export type CreateInvitationRequest = {
 	"send"?: boolean;
 };
 
+export type InvitationDeliveryResult = {
+	"status": "not_requested" | "sent" | "failed";
+	"warning"?: string;
+};
+
 export type CreateInvitationResult = {
 	"invitation": Invitation;
 	"guests": Array<InvitationGuest>;
 	"accessUrl": string;
+	"delivery": InvitationDeliveryResult;
 };
 
 export type InvitationCapabilityRequest = {
@@ -223,10 +229,15 @@ export type InvitationMessageResult = {
 export type OpenEnrollmentRequest = {
 	"capability": string;
 	"label": string;
-	"contactEmail"?: string;
+	"contactEmail": string;
 	"contactPhone"?: string;
-	"preferredDeliveryMethod": "email" | "sms" | "none";
+	"preferredDeliveryMethod": "email";
 	"guestNames": Array<string>;
+};
+
+export type OpenEnrollmentCreateResult = {
+	"data": InvitationHousehold;
+	"delivery": InvitationDeliveryResult;
 };
 
 export interface Operations {
@@ -540,7 +551,7 @@ export interface Operations {
 	enrollOpenInvitation: {
 		parameters: void;
 		requestBody: OpenEnrollmentRequest;
-		response: void;
+		response: OpenEnrollmentCreateResult;
 	};
 }
 

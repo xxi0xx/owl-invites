@@ -140,6 +140,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if h.writeServiceError(w, err) {
 		return
 	}
+	h.logDeliveryFailure(result.Delivery, eventID, result.Invitation.ID, "private invitation delivery")
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
@@ -376,12 +377,23 @@ func (h *Handler) enrollOpen(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
-	rawSession, household, err := h.service.EnrollOpen(r.Context(), req)
+	rawSession, household, delivery, err := h.service.EnrollOpen(r.Context(), req)
 	if h.writeServiceError(w, err) {
 		return
 	}
+	h.logDeliveryFailure(delivery, household.Invitation.EventID, household.Invitation.ID,
+		"open enrollment management delivery")
 	h.setSessionCookie(w, rawSession)
-	writeJSON(w, http.StatusCreated, map[string]any{"data": household})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": household, "delivery": delivery})
+}
+
+func (h *Handler) logDeliveryFailure(delivery DeliveryResult, eventID, invitationID, action string) {
+	if delivery.err == nil {
+		return
+	}
+	h.logger.Error().Err(delivery.err).Str("error_ref", errcode.Ref()).
+		Str("action", action).Str("event_id", eventID).Str("invitation_id", invitationID).
+		Msg("invitation persisted but delivery failed")
 }
 
 func (h *Handler) setSessionCookie(w http.ResponseWriter, raw string) {

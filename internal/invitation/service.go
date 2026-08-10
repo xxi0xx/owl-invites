@@ -61,6 +61,9 @@ func (s *Service) CreatePrivate(ctx context.Context, eventID, creatorUserID stri
 	if err != nil {
 		return nil, err
 	}
+	if req.Send && (method != "email" || email == nil) {
+		return nil, errcode.Validationf("send requires email delivery and a valid contact email")
+	}
 	accessID, err := randomToken(18)
 	if err != nil {
 		return nil, err
@@ -87,13 +90,13 @@ func (s *Service) CreatePrivate(ctx context.Context, eventID, creatorUserID stri
 	if err := s.store.Create(ctx, inv, guests); err != nil {
 		return nil, err
 	}
-	accessURL := s.privateAccessURL(inv)
+	result := &CreateResult{Invitation: inv, Guests: guests, AccessURL: s.privateAccessURL(inv),
+		Delivery: DeliveryResult{Status: DeliveryNotRequested}}
 	if req.Send {
-		if err := s.Deliver(ctx, inv.ID); err != nil {
-			return nil, err
-		}
+		result.Delivery = s.attemptDelivery(ctx, inv.ID,
+			"Invitation created, but email delivery failed. Use the private link or retry delivery.")
 	}
-	return &CreateResult{Invitation: inv, Guests: guests, AccessURL: accessURL}, nil
+	return result, nil
 }
 
 func (s *Service) Deliver(ctx context.Context, invitationID string) error {
@@ -104,7 +107,7 @@ func (s *Service) Deliver(ctx context.Context, invitationID string) error {
 	if inv == nil || inv.RevokedAt != nil {
 		return ErrNotFound
 	}
-	if inv.ContactEmail == nil {
+	if inv.PreferredDeliveryMethod != "email" || inv.ContactEmail == nil {
 		return errcode.Validationf("email delivery is not available for this invitation")
 	}
 	if s.sendEmail == nil {
@@ -119,6 +122,13 @@ func (s *Service) Deliver(ctx context.Context, invitationID string) error {
 	plain := fmt.Sprintf("You have been invited to %s.\n\nOpen your private invitation:\n%s\n\nDo not forward this private link.", household.Event.Title, url)
 	htmlBody := fmt.Sprintf(`<p>You have been invited to <strong>%s</strong>.</p><p><a href="%s">Open your private invitation</a></p><p>Do not forward this private link.</p>`, html.EscapeString(household.Event.Title), html.EscapeString(url))
 	return s.sendEmail(ctx, inv.EventID, inv.ID, *inv.ContactEmail, subject, htmlBody, plain)
+}
+
+func (s *Service) attemptDelivery(ctx context.Context, invitationID, warning string) DeliveryResult {
+	if err := s.Deliver(ctx, invitationID); err != nil {
+		return DeliveryResult{Status: DeliveryFailed, Warning: warning, err: err}
+	}
+	return DeliveryResult{Status: DeliverySent}
 }
 
 func (s *Service) Broadcast(ctx context.Context, eventID string, senderUserID *string, req MessageRequest) (int, error) {
@@ -151,7 +161,7 @@ func (s *Service) Broadcast(ctx context.Context, eventID string, senderUserID *s
 	}
 	sent := 0
 	for _, inv := range targets {
-		if inv.ContactEmail == nil {
+		if inv.PreferredDeliveryMethod != "email" || inv.ContactEmail == nil {
 			continue
 		}
 		url := s.privateAccessURL(inv)
@@ -175,7 +185,8 @@ func (s *Service) Rotate(ctx context.Context, eventID, invitationID string) (*Cr
 	if err != nil {
 		return nil, err
 	}
-	return &CreateResult{Invitation: inv, Guests: household.Guests, AccessURL: s.privateAccessURL(inv)}, nil
+	return &CreateResult{Invitation: inv, Guests: household.Guests, AccessURL: s.privateAccessURL(inv),
+		Delivery: DeliveryResult{Status: DeliveryNotRequested}}, nil
 }
 
 func (s *Service) Revoke(ctx context.Context, eventID, invitationID, reason string) error {
@@ -279,7 +290,8 @@ func (s *Service) RequestRecovery(ctx context.Context, eventID, contact, sourceI
 		return err
 	}
 	for _, inv := range matches {
-		if destinationKind != "email" || inv.ContactEmail == nil || s.sendEmail == nil {
+		if destinationKind != "email" || inv.PreferredDeliveryMethod != "email" ||
+			inv.ContactEmail == nil || s.sendEmail == nil {
 			continue
 		}
 		raw, err := randomToken(32)
@@ -387,25 +399,36 @@ func (s *Service) InspectOpen(ctx context.Context, rawCapability string) (*OpenE
 	return config, event, nil
 }
 
-func (s *Service) EnrollOpen(ctx context.Context, req OpenEnrollmentRequest) (string, *Household, error) {
+func (s *Service) EnrollOpen(ctx context.Context, req OpenEnrollmentRequest) (string, *Household, DeliveryResult, error) {
 	config, err := s.validOpen(ctx, req.Capability)
 	if err != nil {
-		return "", nil, err
+		return "", nil, DeliveryResult{}, err
 	}
 	label := strings.TrimSpace(req.Label)
 	if label == "" {
-		return "", nil, errcode.Validationf("label is required")
+		return "", nil, DeliveryResult{}, errcode.Validationf("label is required")
 	}
 	if len(req.GuestNames) < 1 || len(req.GuestNames) > config.MaxPartySize {
-		return "", nil, errcode.Validationf("party size is outside the open invitation limit")
+		return "", nil, DeliveryResult{}, errcode.Validationf("party size is outside the open invitation limit")
 	}
-	email, phone, method, err := validateContact(req.ContactEmail, req.ContactPhone, req.PreferredDeliveryMethod)
+	eventSummary, err := s.store.EventSummary(ctx, config.EventID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, DeliveryResult{}, err
+	}
+	questions, err := s.store.listQuestions(ctx, config.EventID)
+	if err != nil {
+		return "", nil, DeliveryResult{}, err
+	}
+	if strings.TrimSpace(req.PreferredDeliveryMethod) != "email" {
+		return "", nil, DeliveryResult{}, errcode.Validationf("open enrollment requires email delivery")
+	}
+	email, phone, method, err := validateContact(req.ContactEmail, req.ContactPhone, "email")
+	if err != nil {
+		return "", nil, DeliveryResult{}, err
 	}
 	accessID, err := randomToken(18)
 	if err != nil {
-		return "", nil, err
+		return "", nil, DeliveryResult{}, err
 	}
 	inv := &Invitation{ID: uuid.Must(uuid.NewV7()).String(), EventID: config.EventID,
 		Label: label, ContactEmail: email, ContactPhone: phone,
@@ -415,29 +438,28 @@ func (s *Service) EnrollOpen(ctx context.Context, req OpenEnrollmentRequest) (st
 	for i, rawName := range req.GuestNames {
 		name := strings.TrimSpace(rawName)
 		if name == "" || len(name) > 200 {
-			return "", nil, errcode.Validationf("guest names must be between 1 and 200 characters")
+			return "", nil, DeliveryResult{}, errcode.Validationf("guest names must be between 1 and 200 characters")
 		}
 		guests = append(guests, &Guest{ID: uuid.Must(uuid.NewV7()).String(),
 			Name: name, Origin: GuestOriginAssigned, SortOrder: i})
 	}
 	rawSession, err := randomToken(32)
 	if err != nil {
-		return "", nil, err
+		return "", nil, DeliveryResult{}, err
 	}
-	if err := s.store.EnrollOpen(ctx, config, inv, guests, hashToken(rawSession),
-		time.Now().UTC().Add(s.sessionExpiry)); err != nil {
-		return "", nil, err
-	}
-	household, err := s.store.LoadHousehold(ctx, inv.ID)
+	response, err := s.store.EnrollOpen(ctx, config, inv, guests, hashToken(rawSession),
+		time.Now().UTC().Add(s.sessionExpiry))
 	if err != nil {
-		return "", nil, err
+		return "", nil, DeliveryResult{}, err
 	}
-	if inv.ContactEmail != nil && s.sendEmail != nil {
-		if err := s.Deliver(ctx, inv.ID); err != nil {
-			return "", nil, err
-		}
+	household := &Household{Invitation: inv, Event: eventSummary, Response: response,
+		Guests: guests, Questions: questions, InvitationAnswers: []Answer{}, GuestAnswers: []GuestAnswer{}}
+	if household.Questions == nil {
+		household.Questions = []*Question{}
 	}
-	return rawSession, household, nil
+	delivery := s.attemptDelivery(ctx, inv.ID,
+		"Enrollment succeeded, but the management email could not be sent. Keep this browser session open or request recovery later.")
+	return rawSession, household, delivery, nil
 }
 
 func (s *Service) validOpen(ctx context.Context, raw string) (*OpenEnrollmentConfig, error) {

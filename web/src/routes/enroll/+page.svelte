@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
+	import type { InvitationDeliveryResult } from '$lib/api/generated';
 	import Button from '$lib/components/ui/Button.svelte';
 	import type { ApiError, InvitationHousehold } from '$lib/types';
 
@@ -43,13 +44,16 @@
 		saving = true;
 		error = '';
 		try {
-			await api.post<{ data: InvitationHousehold }>('/invitations/open/enroll', {
+			const response = await api.post<{ data: InvitationHousehold; delivery: InvitationDeliveryResult }>('/invitations/open/enroll', {
 				capability,
 				label,
 				contactEmail: email,
 				preferredDeliveryMethod: 'email',
 				guestNames
 			});
+			if (response.delivery.warning) {
+				sessionStorage.setItem('owl_invitation_delivery_warning', response.delivery.warning);
+			}
 			await goto('/invitation', { replaceState: true });
 		} catch (caught) {
 			const apiError = caught as ApiError;
@@ -79,4 +83,3 @@
 		</form>
 	{/if}
 </main>
-

@@ -99,6 +99,47 @@ func TestContactIsNotIdentityAndInvitationSessionsAreIsolated(t *testing.T) {
 	assert.Equal(t, AttendancePending, unchanged.Guests[0].Attendance)
 }
 
+func TestSMSPreferredInvitationCannotSilentlySendEmail(t *testing.T) {
+	f := newServiceFixture(t)
+	deliveryAttempts := 0
+	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error {
+		deliveryAttempts++
+		return nil
+	})
+
+	_, err := f.service.CreatePrivate(context.Background(), f.eventID, f.userID, CreateRequest{
+		Label: "Unsupported immediate SMS", ContactEmail: ptr("metadata@example.com"),
+		ContactPhone: ptr("+15551234567"), PreferredDeliveryMethod: "sms",
+		AssignedGuestNames: []string{"Guest"}, Send: true,
+	})
+	require.Error(t, err)
+	assert.True(t, errcode.IsValidation(err))
+	items, listErr := f.store.ListByEvent(context.Background(), f.eventID)
+	require.NoError(t, listErr)
+	assert.Empty(t, items, "unsupported send requests must fail before resource creation")
+
+	created, err := f.service.CreatePrivate(context.Background(), f.eventID, f.userID, CreateRequest{
+		Label: "Manual SMS metadata", ContactEmail: ptr("metadata@example.com"),
+		ContactPhone: ptr("+15551234567"), PreferredDeliveryMethod: "sms",
+		AssignedGuestNames: []string{"Guest"}, Send: false,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, DeliveryNotRequested, created.Delivery.Status)
+	err = f.service.Deliver(context.Background(), created.Invitation.ID)
+	require.Error(t, err)
+	assert.True(t, errcode.IsValidation(err))
+	assert.Equal(t, 0, deliveryAttempts)
+
+	_, err = f.service.Broadcast(context.Background(), f.eventID, &f.userID, MessageRequest{
+		RecipientGroup: "all", Subject: "Update", Body: "Household update",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 0, deliveryAttempts)
+	require.NoError(t, f.service.RequestRecovery(context.Background(), f.eventID,
+		"metadata@example.com", "192.0.2.30"))
+	assert.Equal(t, 0, deliveryAttempts)
+}
+
 func TestAllowanceRequiredQuestionsAndOptimisticVersion(t *testing.T) {
 	f := newServiceFixture(t)
 	created := f.create("Household", "household@example.com", 1, "Assigned One", "Assigned Two")
@@ -286,12 +327,13 @@ func TestOpenEnrollmentCreatesIsolatedInvitationAndKeepsPrivateContactMatchUntou
 	require.NoError(t, err)
 	assert.True(t, config.Enabled)
 
-	session, openHousehold, err := f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
+	session, openHousehold, delivery, err := f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
 		Capability: capabilityFromURL(accessURL), Label: "Open household",
 		ContactEmail: ptr("same@example.com"), PreferredDeliveryMethod: "email",
 		GuestNames: []string{"Open One", "Open Two"},
 	})
 	require.NoError(t, err)
+	assert.Equal(t, DeliverySent, delivery.Status)
 	assert.NotEmpty(t, session)
 	assert.Equal(t, SourceOpen, openHousehold.Invitation.Source)
 	assert.NotEqual(t, private.Invitation.ID, openHousehold.Invitation.ID)
@@ -329,7 +371,7 @@ func TestOpenEnrollmentCreatesIsolatedInvitationAndKeepsPrivateContactMatchUntou
 	assert.Equal(t, "Named Guest", privateAfter.Guests[0].Name)
 	assert.Equal(t, AttendancePending, privateAfter.Guests[0].Attendance)
 
-	_, _, err = f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
+	_, _, _, err = f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
 		Capability: capabilityFromURL(accessURL), Label: "Over capacity",
 		ContactEmail: ptr("other@example.com"), PreferredDeliveryMethod: "email",
 		GuestNames: []string{"Other"},
@@ -343,12 +385,13 @@ func TestOpenOriginInvitationCanRecoverToStoredDestination(t *testing.T) {
 		ConfigureOpenRequest{Enabled: true, MaxPartySize: 1})
 	require.NoError(t, err)
 	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error { return nil })
-	_, enrolled, err := f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
+	_, enrolled, delivery, err := f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
 		Capability: capabilityFromURL(accessURL), Label: "Recoverable open household",
 		ContactEmail: ptr("open-recovery@example.com"), PreferredDeliveryMethod: "email",
 		GuestNames: []string{"Open Guest"},
 	})
 	require.NoError(t, err)
+	assert.Equal(t, DeliverySent, delivery.Status)
 
 	var recipient, recoveryLink string
 	f.service.SetEmailSender(func(_ context.Context, _, _, to, _ string, _ string, plain string) error {
@@ -454,7 +497,7 @@ func TestConcurrentOpenCapacityCreatesExactlyOneInvitation(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func(index int) {
 			<-start
-			_, _, enrollErr := f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
+			_, _, _, enrollErr := f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
 				Capability: capability, Label: "Open", ContactEmail: ptr("open@example.com"),
 				PreferredDeliveryMethod: "email", GuestNames: []string{"Guest " + string(rune('A'+index))},
 			})

@@ -81,8 +81,21 @@ email, or phone. The new invitation receives its own normal household
 `access_id`/`token_version` capability in the household HMAC domain, and that
 durable management link is delivered to its stored email destination. Losing
 the enrollment browser session therefore does not make the household
-unrecoverable. Open capacity counts allocated guest seats and is distinct from
-private invitation allocation. Gate 2 has no waitlist.
+unrecoverable. Open enrollment requires a valid email destination and always
+uses the `email` delivery method; phone-only and SMS enrollment requests are
+rejected before persistence. Open capacity counts allocated guest seats and is
+distinct from private invitation allocation. Gate 2 has no waitlist.
+
+Resource persistence and delivery are separate outcomes. Once a private
+invitation or open-enrollment transaction commits, creation is successful even
+if the subsequent SMTP attempt fails. The response carries a capability-free,
+nonfatal delivery status/warning; the server logs the failure and the inherited
+notification subsystem records provider failures. Open enrollment still sets
+the committed invitation-session cookie, so the new household remains visible
+and manageable without a duplicate enrollment retry. Private `send=true`
+requests are validated for an email method and destination before creation;
+organizers can retry a failed send through the explicit delivery endpoint. A
+queue/outbox is deferred beyond Gate 2.
 
 ## Legacy migration mapping
 
@@ -103,7 +116,7 @@ contact fields.
 
 | Feature | Gate 2 disposition |
 | --- | --- |
-| Private invitation delivery and RSVP | Adapt to invitation sessions and per-guest responses. |
+| Private invitation delivery and RSVP | Adapt to invitation sessions and per-guest responses. Delivery is email-only and has a result separate from committed creation. |
 | Messaging | Adapt organizer delivery to invitation destinations; defer guest-to-organizer threads. |
 | Reminders and cancellation notices | Adapt delivery to invitation destinations and invitation links. |
 | Notification log | Adapt nullable ownership from attendee to invitation. |
@@ -187,6 +200,11 @@ discard the path token from browser history, and direct the guest to recovery.
 - Open enrollment outside its enabled time window is unavailable without
   revealing configuration details. Concurrent enrollment at the last seat
   admits exactly one household and returns `409 capacity_reached` to the other.
+- Open enrollment rejects missing-email, phone-only, SMS, and `none` delivery
+  requests before capacity is consumed. Private SMS/phone preferences may be
+  stored only as metadata for manual handling; Gate 2 invitation delivery,
+  recovery, and capability-bearing broadcasts never silently fall back to
+  email for an SMS-preferred household.
 
 ## Browser acceptance boundary
 
@@ -213,6 +231,7 @@ to both isolated invitations through Mailpit.
 
 Gate 2 does not provide a waitlist, contact-based identity/claiming, CSV
 invitation import/export, guestbook/comments, guest-to-organizer message
-threads, SMS invitation delivery, or guest invite-card rendering. These are
-explicitly disabled or deferred and must not be restored using legacy RSVP or
-share tokens. No Gate 3 schema or domain behavior is part of this branch.
+threads, SMS invitation delivery/recovery, reliable asynchronous delivery
+infrastructure, or guest invite-card rendering. These are explicitly disabled
+or deferred and must not be restored using legacy RSVP or share tokens. No
+Gate 3 schema or domain behavior is part of this branch.

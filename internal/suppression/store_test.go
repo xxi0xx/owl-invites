@@ -23,8 +23,8 @@ func seedEvent(t *testing.T, ctx context.Context, db database.DB) string {
 
 	testutil.SeedUser(t, db, orgID, "test-"+orgID+"@example.com", "Test Organizer")
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO events (id, title, event_date, status, share_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		eventID, "Test Event", "2026-06-15T14:00:00Z", "published", "share-"+eventID, now, now); err != nil {
+		`INSERT INTO events (id, title, event_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, "Test Event", "2026-06-15T14:00:00Z", "published", now, now); err != nil {
 		t.Fatalf("seed event: %v", err)
 	}
 	testutil.SeedEventOwner(t, db, eventID, orgID)

@@ -13,7 +13,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/errcode"
 )
 
-type EmailSender func(ctx context.Context, to, subject, htmlBody, plainBody string) error
+type EmailSender func(ctx context.Context, eventID, invitationID, to, subject, htmlBody, plainBody string) error
 
 type Service struct {
 	store          *Store
@@ -118,7 +118,52 @@ func (s *Service) Deliver(ctx context.Context, invitationID string) error {
 	subject := "You're invited — " + household.Event.Title
 	plain := fmt.Sprintf("You have been invited to %s.\n\nOpen your private invitation:\n%s\n\nDo not forward this private link.", household.Event.Title, url)
 	htmlBody := fmt.Sprintf(`<p>You have been invited to <strong>%s</strong>.</p><p><a href="%s">Open your private invitation</a></p><p>Do not forward this private link.</p>`, html.EscapeString(household.Event.Title), html.EscapeString(url))
-	return s.sendEmail(ctx, *inv.ContactEmail, subject, htmlBody, plain)
+	return s.sendEmail(ctx, inv.EventID, inv.ID, *inv.ContactEmail, subject, htmlBody, plain)
+}
+
+func (s *Service) Broadcast(ctx context.Context, eventID string, senderUserID *string, req MessageRequest) (int, error) {
+	req.RecipientGroup = strings.TrimSpace(req.RecipientGroup)
+	if req.RecipientGroup == "" {
+		req.RecipientGroup = "all"
+	}
+	if !validAttendance(req.RecipientGroup) && req.RecipientGroup != "all" {
+		return 0, errcode.Validationf("invalid recipient group")
+	}
+	req.Subject = strings.TrimSpace(req.Subject)
+	req.Body = strings.TrimSpace(req.Body)
+	if req.Subject == "" || len(req.Subject) > 200 {
+		return 0, errcode.Validationf("subject is required and must be 200 characters or fewer")
+	}
+	if req.Body == "" || len(req.Body) > 10000 {
+		return 0, errcode.Validationf("body is required and must be 10000 characters or fewer")
+	}
+	if s.sendEmail == nil {
+		return 0, fmt.Errorf("invitation email delivery is not configured")
+	}
+	targets, err := s.store.ListDeliveryTargets(ctx, eventID, req.RecipientGroup)
+	if err != nil {
+		return 0, err
+	}
+	message := &InvitationMessage{EventID: eventID, SenderUserID: senderUserID,
+		RecipientGroup: req.RecipientGroup, Subject: req.Subject, Body: req.Body}
+	if err := s.store.CreateMessage(ctx, message); err != nil {
+		return 0, err
+	}
+	sent := 0
+	for _, inv := range targets {
+		if inv.ContactEmail == nil {
+			continue
+		}
+		url := s.privateAccessURL(inv)
+		plain := req.Body + "\n\nManage your private invitation:\n" + url
+		htmlBody := fmt.Sprintf(`<p>%s</p><p><a href="%s">Manage your private invitation</a></p>`,
+			html.EscapeString(req.Body), html.EscapeString(url))
+		if err := s.sendEmail(ctx, eventID, inv.ID, *inv.ContactEmail, req.Subject, htmlBody, plain); err != nil {
+			return sent, err
+		}
+		sent++
+	}
+	return sent, nil
 }
 
 func (s *Service) Rotate(ctx context.Context, eventID, invitationID string) (*CreateResult, error) {
@@ -250,7 +295,7 @@ func (s *Service) RequestRecovery(ctx context.Context, eventID, contact, sourceI
 		subject := "Recover your invitation — " + household.Event.Title
 		plain := fmt.Sprintf("Use this one-time link to recover your invitation:\n%s\n\nIt expires in %d minutes.", url, int(s.recoveryExpiry.Minutes()))
 		htmlBody := fmt.Sprintf(`<p>Use this one-time link to recover your invitation:</p><p><a href="%s">Recover invitation</a></p><p>It expires in %d minutes.</p>`, html.EscapeString(url), int(s.recoveryExpiry.Minutes()))
-		if err := s.sendEmail(ctx, *inv.ContactEmail, subject, htmlBody, plain); err != nil {
+		if err := s.sendEmail(ctx, inv.EventID, inv.ID, *inv.ContactEmail, subject, htmlBody, plain); err != nil {
 			return err
 		}
 	}

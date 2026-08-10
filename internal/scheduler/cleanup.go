@@ -81,7 +81,7 @@ func (j *CleanupJob) Run(ctx context.Context) error {
 // and logs a warning. It only warns for events that haven't been warned yet
 // (tracked in memory). If a retention notification callback is set, it also
 // sends an email to the organizer. The event status is NOT changed, so
-// published events remain fully functional for RSVPs.
+// published events remain fully functional for invitation responses.
 func (j *CleanupJob) warnExpiring(ctx context.Context) error {
 	now := time.Now().UTC()
 

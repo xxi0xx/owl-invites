@@ -36,18 +36,3 @@ type UpdateQuestionRequest struct {
 	Scope     *string  `json:"scope,omitempty"`
 	SortOrder *int     `json:"sortOrder,omitempty"`
 }
-
-// Answer represents an attendee's answer to a question.
-type Answer struct {
-	ID         string    `json:"id"`
-	AttendeeID string    `json:"attendeeId"`
-	QuestionID string    `json:"questionId"`
-	Answer     string    `json:"answer"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
-}
-
-// SubmitAnswersRequest is the request body for submitting answers.
-type SubmitAnswersRequest struct {
-	Answers map[string]string `json:"answers"` // questionID -> answer
-}

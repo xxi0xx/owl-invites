@@ -35,10 +35,10 @@ func newServiceFixture(t *testing.T) *serviceFixture {
 	var err error
 	_, err = db.ExecContext(context.Background(), `INSERT INTO events (
 		id, title, description, event_date, location, timezone,
-		retention_days, status, share_token, created_at, updated_at
-	) VALUES (?, 'Invitation Test', '', ?, '', 'UTC', 30, 'published', ?, ?, ?)`,
+		retention_days, status, created_at, updated_at
+	) VALUES (?, 'Invitation Test', '', ?, '', 'UTC', 30, 'published', ?, ?)`,
 		eventID, time.Now().UTC().Add(24*time.Hour).Format(time.RFC3339),
-		"legacy-share-invitation-test", now, now)
+		now, now)
 	require.NoError(t, err)
 	_, err = db.ExecContext(context.Background(), `INSERT INTO event_memberships (
 		id, event_id, user_id, role, granted_by_user_id, created_at, updated_at
@@ -172,12 +172,78 @@ func TestRotationAndRevocationInvalidateCapabilitiesAndSessions(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidCapability)
 }
 
+func TestPrivateCapabilityTamperingCannotSelectAnotherInvitation(t *testing.T) {
+	f := newServiceFixture(t)
+	first := f.create("First", "first@example.com", 0, "First Guest")
+	second := f.create("Second", "second@example.com", 0, "Second Guest")
+
+	firstParts := strings.Split(capabilityFromURL(first.AccessURL), ".")
+	secondParts := strings.Split(capabilityFromURL(second.AccessURL), ".")
+	require.Len(t, firstParts, 4)
+	require.Len(t, secondParts, 4)
+	firstParts[1] = secondParts[1]
+
+	_, _, err := f.service.ExchangePrivate(context.Background(), strings.Join(firstParts, "."))
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+}
+
+func TestPrivateCapabilityReplayCreatesDistinctScopedSessionsUntilRotation(t *testing.T) {
+	f := newServiceFixture(t)
+	created := f.create("Durable capability", "durable@example.com", 0, "Guest")
+	capability := capabilityFromURL(created.AccessURL)
+
+	firstSession, firstHousehold, err := f.service.ExchangePrivate(context.Background(), capability)
+	require.NoError(t, err)
+	secondSession, secondHousehold, err := f.service.ExchangePrivate(context.Background(), capability)
+	require.NoError(t, err)
+	assert.NotEqual(t, firstSession, secondSession)
+	assert.Equal(t, created.Invitation.ID, firstHousehold.Invitation.ID)
+	assert.Equal(t, created.Invitation.ID, secondHousehold.Invitation.ID)
+
+	updated, err := f.service.SubmitForSession(context.Background(), firstSession, SubmitRequest{
+		Version: 1,
+		AssignedGuests: []GuestAttendanceInput{{
+			GuestID: created.Guests[0].ID, Attendance: AttendanceAttending,
+		}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, updated.Response.Version)
+
+	visibleToSecond, err := f.service.HouseholdForSession(context.Background(), secondSession)
+	require.NoError(t, err)
+	assert.Equal(t, AttendanceAttending, visibleToSecond.Guests[0].Attendance)
+
+	_, err = f.service.Rotate(context.Background(), f.eventID, created.Invitation.ID)
+	require.NoError(t, err)
+	_, err = f.service.HouseholdForSession(context.Background(), firstSession)
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+	_, err = f.service.HouseholdForSession(context.Background(), secondSession)
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+}
+
+func TestExpiredInvitationSessionAndRecoveryTokenAreRejected(t *testing.T) {
+	f := newServiceFixture(t)
+	created := f.create("Expiry", "expiry@example.com", 0, "Guest")
+
+	expiredSession := strings.Repeat("s", 43)
+	require.NoError(t, f.store.CreateSession(context.Background(), created.Invitation.ID,
+		hashToken(expiredSession), created.Invitation.TokenVersion, time.Now().UTC().Add(-time.Minute)))
+	_, err := f.service.HouseholdForSession(context.Background(), expiredSession)
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+
+	expiredRecovery := strings.Repeat("r", 43)
+	require.NoError(t, f.store.CreateRecoveryToken(context.Background(), created.Invitation.ID,
+		hashToken(expiredRecovery), "email", time.Now().UTC().Add(-time.Minute)))
+	_, _, err = f.service.ExchangeRecovery(context.Background(), expiredRecovery)
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+}
+
 func TestRecoveryIsStoredDestinationOnlyAndSingleUse(t *testing.T) {
 	f := newServiceFixture(t)
 	f.create("Recover me", "stored@example.com", 0, "Guest")
 	var mu sync.Mutex
 	var recipients, links []string
-	f.service.SetEmailSender(func(_ context.Context, to, _ string, _ string, plain string) error {
+	f.service.SetEmailSender(func(_ context.Context, _, _, to, _ string, _ string, plain string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		recipients = append(recipients, to)
@@ -230,6 +296,40 @@ func TestOpenEnrollmentCreatesIsolatedInvitationAndKeepsPrivateContactMatchUntou
 		GuestNames: []string{"Other"},
 	})
 	assert.ErrorIs(t, err, ErrCapacity)
+}
+
+func TestOpenEnrollmentWindowsAndRotationAreEnforced(t *testing.T) {
+	f := newServiceFixture(t)
+	now := time.Now().UTC()
+	futureOpen := now.Add(time.Hour).Format(time.RFC3339)
+	futureClose := now.Add(2 * time.Hour).Format(time.RFC3339)
+	_, futureURL, err := f.service.ConfigureOpen(context.Background(), f.eventID, f.userID,
+		ConfigureOpenRequest{Enabled: true, OpensAt: &futureOpen, ClosesAt: &futureClose, MaxPartySize: 2})
+	require.NoError(t, err)
+	_, _, err = f.service.InspectOpen(context.Background(), capabilityFromURL(futureURL))
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+
+	pastOpen := now.Add(-2 * time.Hour).Format(time.RFC3339)
+	pastClose := now.Add(-time.Hour).Format(time.RFC3339)
+	_, closedURL, err := f.service.ConfigureOpen(context.Background(), f.eventID, f.userID,
+		ConfigureOpenRequest{Enabled: true, OpensAt: &pastOpen, ClosesAt: &pastClose, MaxPartySize: 2})
+	require.NoError(t, err)
+	_, _, err = f.service.InspectOpen(context.Background(), capabilityFromURL(closedURL))
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+
+	activeClose := now.Add(time.Hour).Format(time.RFC3339)
+	_, activeURL, err := f.service.ConfigureOpen(context.Background(), f.eventID, f.userID,
+		ConfigureOpenRequest{Enabled: true, OpensAt: &pastOpen, ClosesAt: &activeClose, MaxPartySize: 2})
+	require.NoError(t, err)
+	_, _, err = f.service.InspectOpen(context.Background(), capabilityFromURL(activeURL))
+	require.NoError(t, err)
+
+	_, rotatedURL, err := f.service.RotateOpen(context.Background(), f.eventID)
+	require.NoError(t, err)
+	_, _, err = f.service.InspectOpen(context.Background(), capabilityFromURL(activeURL))
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+	_, _, err = f.service.InspectOpen(context.Background(), capabilityFromURL(rotatedURL))
+	require.NoError(t, err)
 }
 
 func TestConcurrentResponsesAcceptExactlyOneOptimisticVersion(t *testing.T) {

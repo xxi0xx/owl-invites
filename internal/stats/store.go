@@ -26,12 +26,12 @@ func (s *Store) GetInstanceStats(ctx context.Context) (*InstanceStats, error) {
 		return nil, fmt.Errorf("event stats: %w", err)
 	}
 
-	if err := s.loadAttendeeStats(ctx, &stats.Attendees); err != nil {
-		return nil, fmt.Errorf("attendee stats: %w", err)
+	if err := s.loadGuestStats(ctx, &stats.Guests); err != nil {
+		return nil, fmt.Errorf("guest stats: %w", err)
 	}
 
-	if err := s.loadOrganizerStats(ctx, &stats.Organizers); err != nil {
-		return nil, fmt.Errorf("organizer stats: %w", err)
+	if err := s.loadUserStats(ctx, &stats.Users); err != nil {
+		return nil, fmt.Errorf("user stats: %w", err)
 	}
 
 	if err := s.loadFeatureAdoption(ctx, &stats.Features); err != nil {
@@ -73,9 +73,11 @@ func (s *Store) loadEventStats(ctx context.Context, out *EventStats) error {
 	return rows.Err()
 }
 
-func (s *Store) loadAttendeeStats(ctx context.Context, out *AttendeeStats) error {
+func (s *Store) loadGuestStats(ctx context.Context, out *GuestStats) error {
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT rsvp_status, COUNT(*), COALESCE(SUM(plus_ones), 0) FROM attendees GROUP BY rsvp_status",
+		`SELECT COALESCE(gr.attendance, 'pending'), COUNT(*) FROM guests g
+		 LEFT JOIN guest_responses gr ON gr.guest_id = g.id
+		 WHERE g.removed_at IS NULL GROUP BY COALESCE(gr.attendance, 'pending')`,
 	)
 	if err != nil {
 		return err
@@ -84,12 +86,12 @@ func (s *Store) loadAttendeeStats(ctx context.Context, out *AttendeeStats) error
 
 	for rows.Next() {
 		var status string
-		var count, plusOnes int
-		if err := rows.Scan(&status, &count, &plusOnes); err != nil {
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
 			return err
 		}
 		out.Total += count
-		out.TotalHeadcount += count + plusOnes
+		out.TotalHeadcount += count
 		switch status {
 		case "attending":
 			out.Attending = count
@@ -99,30 +101,28 @@ func (s *Store) loadAttendeeStats(ctx context.Context, out *AttendeeStats) error
 			out.Declined = count
 		case "pending":
 			out.Pending = count
-		case "waitlisted":
-			out.Waitlisted = count
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 
-	// Calculate average attendees per event.
-	var eventsWithAttendees int
+	var eventsWithGuests int
 	err = s.db.QueryRowContext(ctx,
-		"SELECT COUNT(DISTINCT event_id) FROM attendees",
-	).Scan(&eventsWithAttendees)
+		`SELECT COUNT(DISTINCT i.event_id) FROM guests g
+		 JOIN invitations i ON i.id = g.invitation_id WHERE g.removed_at IS NULL`,
+	).Scan(&eventsWithGuests)
 	if err != nil {
 		return err
 	}
-	if eventsWithAttendees > 0 {
-		out.AvgPerEvent = float64(out.Total) / float64(eventsWithAttendees)
+	if eventsWithGuests > 0 {
+		out.AvgPerEvent = float64(out.Total) / float64(eventsWithGuests)
 	}
 
 	return nil
 }
 
-func (s *Store) loadOrganizerStats(ctx context.Context, out *OrganizerStats) error {
+func (s *Store) loadUserStats(ctx context.Context, out *UserStats) error {
 	return s.db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM users",
 	).Scan(&out.Total)
@@ -134,20 +134,21 @@ func (s *Store) loadFeatureAdoption(ctx context.Context, out *FeatureAdoption) e
 		query string
 		dest  *int
 	}{
-		{"SELECT COUNT(*) FROM events WHERE waitlist_enabled = ?", &out.WaitlistEvents},
-		{"SELECT COUNT(*) FROM events WHERE comments_enabled = ?", &out.CommentsEnabledEvents},
+		{"SELECT COUNT(*) FROM open_enrollments WHERE enabled = ?", &out.OpenEnrollmentEvents},
 		{"SELECT COUNT(DISTINCT event_id) FROM event_memberships WHERE role = 'cohost'", &out.CohostedEvents},
 		{"SELECT COUNT(DISTINCT event_id) FROM event_questions", &out.EventsWithQuestions},
-		{"SELECT COUNT(*) FROM events WHERE max_capacity IS NOT NULL", &out.EventsWithCapacity},
+		{"SELECT COUNT(*) FROM open_enrollments WHERE capacity IS NOT NULL", &out.EventsWithCapacity},
 		{"SELECT COUNT(*) FROM events WHERE series_id IS NOT NULL", &out.SeriesEvents},
 	}
 
 	for _, q := range queries {
 		var err error
-		if q.query == queries[0].query || q.query == queries[1].query {
-			// waitlist_enabled and comments_enabled are INTEGER (0/1) columns;
-			// bind 1 rather than a Go bool so lib/pq accepts it on Postgres.
-			err = s.db.QueryRowContext(ctx, q.query, 1).Scan(q.dest)
+		if q.query == queries[0].query {
+			var enabled any = 1
+			if s.db.Dialect() == "postgres" {
+				enabled = true
+			}
+			err = s.db.QueryRowContext(ctx, q.query, enabled).Scan(q.dest)
 		} else {
 			err = s.db.QueryRowContext(ctx, q.query).Scan(q.dest)
 		}

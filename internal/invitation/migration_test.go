@@ -75,8 +75,22 @@ func TestLegacyAttendeeMigrationCreatesOneInvitationAndNoPlaceholderGuests(t *te
 		id, attendee_id, question_id, answer, created_at, updated_at
 	) VALUES ('legacy-answer', ?, 'legacy-question', 'Vegetarian', ?, ?)`, attendeeID, now, now)
 	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO notification_log (
+		id, event_id, attendee_id, channel, provider, status, recipient, subject,
+		delivery_status, created_at
+	) VALUES ('legacy-notification', ?, ?, 'email', 'smtp', 'sent',
+		'guest@example.com', 'Legacy notice', 'delivered', ?)`, eventID, attendeeID, now)
+	require.NoError(t, err)
 
-	require.NoError(t, database.RunMigrations(db))
+	require.NoError(t, database.RunMigrationsTo(db, 35))
+
+	// Seed a live invitation session after the one-way mapping and identity
+	// shadow removal. SQLite migration 36 rebuilds events and must preserve this
+	// Gate 2 child rather than relying only on fresh-install behavior.
+	storeAt35 := NewStore(db)
+	require.NoError(t, storeAt35.CreateSession(ctx, "legacy-invitation:"+attendeeID,
+		hashToken("preserved-invitation-session"), 1, time.Now().UTC().Add(time.Hour)))
+	require.NoError(t, database.RunMigrationsTo(db, 36))
 
 	var migratedUserID string
 	require.NoError(t, db.QueryRowContext(ctx, "SELECT user_id FROM magic_links WHERE id = 'legacy-magic-link'").Scan(&migratedUserID))
@@ -106,6 +120,41 @@ func TestLegacyAttendeeMigrationCreatesOneInvitationAndNoPlaceholderGuests(t *te
 	assert.Equal(t, "Vegetarian", household.GuestAnswers[0].Answer)
 	require.Len(t, household.Questions, 1)
 	assert.Equal(t, QuestionScopeGuest, household.Questions[0].Scope)
+
+	var notificationInvitationID string
+	require.NoError(t, db.QueryRowContext(ctx,
+		"SELECT invitation_id FROM notification_log WHERE id = 'legacy-notification'").Scan(&notificationInvitationID))
+	assert.Equal(t, "legacy-invitation:"+attendeeID, notificationInvitationID)
+	var preservedSessionCount int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM invitation_sessions
+		WHERE invitation_id = ? AND token_hash = ?`, "legacy-invitation:"+attendeeID,
+		hashToken("preserved-invitation-session")).Scan(&preservedSessionCount))
+	assert.Equal(t, 1, preservedSessionCount)
+
+	service, err := NewService(store, testSecret, "https://invites.example", time.Hour, 15*time.Minute)
+	require.NoError(t, err)
+	_, _, err = service.ExchangePrivate(ctx, "legacy-random-rsvp-selector")
+	assert.ErrorIs(t, err, ErrInvalidCapability, "legacy token is only a selector and never a capability")
+
+	for _, query := range []string{
+		"SELECT COUNT(*) FROM attendees",
+		"SELECT COUNT(*) FROM attendee_answers",
+		"SELECT COUNT(*) FROM event_comments",
+		"SELECT COUNT(*) FROM messages",
+		"SELECT share_token FROM events LIMIT 1",
+		"SELECT contact_requirement FROM events LIMIT 1",
+		"SELECT max_capacity FROM events LIMIT 1",
+		"SELECT waitlist_enabled FROM events LIMIT 1",
+		"SELECT comments_enabled FROM events LIMIT 1",
+		"SELECT contact_requirement FROM event_series LIMIT 1",
+		"SELECT max_capacity FROM event_series LIMIT 1",
+		"SELECT attendee_id FROM notification_log LIMIT 1",
+	} {
+		assert.Error(t, db.QueryRowContext(ctx, query).Scan(new(any)), query+" must be removed")
+	}
+	var invitationMessageCount int
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM invitation_messages").Scan(&invitationMessageCount))
+	assert.Zero(t, invitationMessageCount)
 }
 
 func TestIdentityShadowRemovalRejectsOwnerParityMismatch(t *testing.T) {

@@ -2,205 +2,144 @@ package stats
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/testutil"
 )
 
-func setupStats(t *testing.T) *Store {
+const statsNow = "2026-01-01T00:00:00Z"
+
+func seedStatsEvent(t *testing.T, db database.DB, id, status string) {
 	t.Helper()
-	db := testutil.NewTestDB(t)
-	return NewStore(db)
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO events (id, title, event_date, status, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`, id, "Event "+id, statsNow, status, statsNow, statsNow)
+	require.NoError(t, err)
 }
 
-func TestGetInstanceStats_EmptyDB(t *testing.T) {
-	store := setupStats(t)
-	ctx := context.Background()
-
-	stats, err := store.GetInstanceStats(ctx)
+func seedStatsInvitation(t *testing.T, db database.DB, eventID, invitationID string, attendances ...string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(), `INSERT INTO invitations (
+		id, event_id, label, preferred_delivery_method, additional_guest_allowance,
+		source, access_id, token_version, created_at, updated_at
+	) VALUES (?, ?, ?, 'none', 0, 'private', ?, 1, ?, ?)`,
+		invitationID, eventID, "Household "+invitationID, "access-"+invitationID, statsNow, statsNow)
 	require.NoError(t, err)
-
-	assert.Equal(t, 0, stats.Events.Total)
-	assert.Equal(t, 0, stats.Attendees.Total)
-	assert.Equal(t, 0, stats.Organizers.Total)
-	assert.Equal(t, 0, stats.Notifications.Total)
-	assert.Equal(t, float64(0), stats.Attendees.AvgPerEvent)
+	responseID := "response-" + invitationID
+	_, err = db.ExecContext(context.Background(), `INSERT INTO rsvp_responses (
+		id, invitation_id, version, submitted_at, created_at, updated_at
+	) VALUES (?, ?, 1, ?, ?, ?)`, responseID, invitationID, statsNow, statsNow, statsNow)
+	require.NoError(t, err)
+	for index, attendance := range attendances {
+		guestID := fmt.Sprintf("guest-%s-%d", invitationID, index)
+		_, err = db.ExecContext(context.Background(), `INSERT INTO guests (
+			id, invitation_id, name, origin, sort_order, created_at, updated_at
+		) VALUES (?, ?, ?, 'assigned', ?, ?, ?)`, guestID, invitationID, guestID, index, statsNow, statsNow)
+		require.NoError(t, err)
+		if attendance != "pending" {
+			_, err = db.ExecContext(context.Background(), `INSERT INTO guest_responses (
+				id, rsvp_response_id, guest_id, attendance, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?)`, "guest-response-"+guestID, responseID, guestID, attendance, statsNow, statsNow)
+			require.NoError(t, err)
+		}
+	}
 }
 
-func TestGetInstanceStats_WithData(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	testutil.SeedUser(t, db, "org-1", "admin@test.com", "Admin")
-
-	// Seed events.
-	for _, ev := range []struct {
-		id     string
-		status string
-	}{
-		{"ev-1", "published"},
-		{"ev-2", "published"},
-		{"ev-3", "draft"},
-		{"ev-4", "cancelled"},
-	} {
-		_, err := db.ExecContext(ctx,
-			`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
-			VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', ?, ?, 30, 'email', 0, 0, 0, 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-			ev.id, "Event "+ev.id, ev.status, "share-"+ev.id,
-		)
-		require.NoError(t, err)
-		testutil.SeedEventOwner(t, db, ev.id, "org-1")
-	}
-
-	// Seed attendees.
-	for _, att := range []struct {
-		id       string
-		eventID  string
-		status   string
-		plusOnes int
-	}{
-		{"att-1", "ev-1", "attending", 2},
-		{"att-2", "ev-1", "maybe", 0},
-		{"att-3", "ev-2", "attending", 1},
-		{"att-4", "ev-2", "declined", 0},
-		{"att-5", "ev-2", "pending", 0},
-	} {
-		_, err := db.ExecContext(ctx,
-			`INSERT INTO attendees (id, event_id, name, rsvp_status, rsvp_token, contact_method, dietary_notes, plus_ones, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, 'email', '', ?, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-			att.id, att.eventID, "Guest "+att.id, att.status, "token-"+att.id, att.plusOnes,
-		)
-		require.NoError(t, err)
-	}
-
-	stats, err := store.GetInstanceStats(ctx)
+func TestGetInstanceStatsEmpty(t *testing.T) {
+	stats, err := NewStore(testutil.NewTestDB(t)).GetInstanceStats(context.Background())
 	require.NoError(t, err)
+	assert.Zero(t, stats.Events.Total)
+	assert.Zero(t, stats.Guests.Total)
+	assert.Zero(t, stats.Users.Total)
+	assert.Zero(t, stats.Notifications.Total)
+}
 
-	// Events.
-	assert.Equal(t, 4, stats.Events.Total)
-	assert.Equal(t, 2, stats.Events.Published)
+func TestGetInstanceStatsUsesInvitationGuests(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	testutil.SeedUser(t, db, "owner-stats", "owner-stats@example.com", "Owner")
+	seedStatsEvent(t, db, "stats-event-1", "published")
+	seedStatsEvent(t, db, "stats-event-2", "draft")
+	seedStatsEvent(t, db, "stats-event-3", "cancelled")
+	seedStatsInvitation(t, db, "stats-event-1", "stats-invitation-1", "attending", "maybe")
+	seedStatsInvitation(t, db, "stats-event-2", "stats-invitation-2", "declined", "pending", "attending")
+
+	stats, err := NewStore(db).GetInstanceStats(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 3, stats.Events.Total)
+	assert.Equal(t, 1, stats.Events.Published)
 	assert.Equal(t, 1, stats.Events.Draft)
 	assert.Equal(t, 1, stats.Events.Cancelled)
-	assert.Equal(t, 0, stats.Events.Archived)
-
-	// Attendees.
-	assert.Equal(t, 5, stats.Attendees.Total)
-	assert.Equal(t, 8, stats.Attendees.TotalHeadcount) // 5 + 3 plus-ones
-	assert.Equal(t, 2, stats.Attendees.Attending)
-	assert.Equal(t, 1, stats.Attendees.Maybe)
-	assert.Equal(t, 1, stats.Attendees.Declined)
-	assert.Equal(t, 1, stats.Attendees.Pending)
-	assert.Equal(t, 0, stats.Attendees.Waitlisted)
-	assert.Equal(t, 2.5, stats.Attendees.AvgPerEvent) // 5 attendees across 2 events
-
-	// Organizers.
-	assert.Equal(t, 1, stats.Organizers.Total)
+	assert.Equal(t, 5, stats.Guests.Total)
+	assert.Equal(t, 5, stats.Guests.TotalHeadcount)
+	assert.Equal(t, 2, stats.Guests.Attending)
+	assert.Equal(t, 1, stats.Guests.Maybe)
+	assert.Equal(t, 1, stats.Guests.Declined)
+	assert.Equal(t, 1, stats.Guests.Pending)
+	assert.Equal(t, 2.5, stats.Guests.AvgPerEvent)
+	assert.Equal(t, 1, stats.Users.Total)
 }
 
-func TestGetInstanceStats_FeatureAdoption(t *testing.T) {
+func TestGetInstanceStatsFeatureAdoption(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	testutil.SeedUser(t, db, "org-1", "admin@test.com", "Admin")
-	testutil.SeedUser(t, db, "cohost-1", "cohost@test.com", "Co-host")
-
-	// Event with waitlist enabled.
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
-		VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-1', 30, 'email', 0, 0, 1, 1, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"ev-1", "Event 1",
-	)
+	testutil.SeedUser(t, db, "owner-features", "owner-features@example.com", "Owner")
+	testutil.SeedUser(t, db, "cohost-features", "cohost-features@example.com", "Cohost")
+	seedStatsEvent(t, db, "feature-event", "published")
+	testutil.SeedEventOwner(t, db, "feature-event", "owner-features")
+	_, err := db.ExecContext(context.Background(), `INSERT INTO event_memberships (
+		id, event_id, user_id, role, granted_by_user_id, created_at, updated_at
+	) VALUES ('feature-cohost-membership', 'feature-event', 'cohost-features', 'cohost',
+		'owner-features', ?, ?)`, statsNow, statsNow)
 	require.NoError(t, err)
-	testutil.SeedEventOwner(t, db, "ev-1", "org-1")
-
-	// Event with capacity.
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, max_capacity, created_at, updated_at)
-		VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-2', 30, 'email', 0, 0, 0, 0, 100, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"ev-2", "Event 2",
-	)
+	var enabled any = 1
+	if db.Dialect() == "postgres" {
+		enabled = true
+	}
+	_, err = db.ExecContext(context.Background(), `INSERT INTO open_enrollments (
+		id, event_id, access_id, token_version, enabled, max_party_size, capacity,
+		created_by_user_id, created_at, updated_at
+	) VALUES ('feature-open', 'feature-event', 'feature-open-access', 1, ?, 4, 25,
+		'owner-features', ?, ?)`, enabled, statsNow, statsNow)
 	require.NoError(t, err)
-	testutil.SeedEventOwner(t, db, "ev-2", "org-1")
-
-	// Add a co-host.
-	_, err = db.ExecContext(ctx,
-		"INSERT INTO event_memberships (id, event_id, user_id, role, granted_by_user_id, created_at, updated_at) VALUES (?, ?, ?, 'cohost', ?, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')",
-		"ch-1", "ev-1", "cohost-1", "org-1",
-	)
+	_, err = db.ExecContext(context.Background(), `INSERT INTO event_questions (
+		id, event_id, label, type, options, required, scope, sort_order, deleted, created_at, updated_at
+	) VALUES ('feature-question', 'feature-event', 'Dietary needs?', 'text', '[]', 0,
+		'guest', 0, 0, ?, ?)`, statsNow, statsNow)
 	require.NoError(t, err)
 
-	// Add a custom question.
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO event_questions (id, event_id, label, type, options, required, sort_order, created_at, updated_at)
-		VALUES (?, ?, 'Dietary?', 'text', '[]', 0, 1, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"q-1", "ev-2",
-	)
+	stats, err := NewStore(db).GetInstanceStats(context.Background())
 	require.NoError(t, err)
-
-	stats, err := store.GetInstanceStats(ctx)
-	require.NoError(t, err)
-
-	assert.Equal(t, 1, stats.Features.WaitlistEvents)
-	assert.Equal(t, 1, stats.Features.CommentsEnabledEvents)
+	assert.Equal(t, 1, stats.Features.OpenEnrollmentEvents)
+	assert.Equal(t, 1, stats.Features.EventsWithCapacity)
 	assert.Equal(t, 1, stats.Features.CohostedEvents)
 	assert.Equal(t, 1, stats.Features.EventsWithQuestions)
-	assert.Equal(t, 1, stats.Features.EventsWithCapacity)
 }
 
-func TestGetInstanceStats_NotificationStats(t *testing.T) {
+func TestGetInstanceStatsNotificationOwnership(t *testing.T) {
 	db := testutil.NewTestDB(t)
-	store := NewStore(db)
-	ctx := context.Background()
-
-	// Seed required parent records.
-	testutil.SeedUser(t, db, "org-1", "admin@test.com", "Admin")
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO events (id, title, description, event_date, location, timezone, status, share_token, retention_days, contact_requirement, show_headcount, show_guest_list, waitlist_enabled, comments_enabled, created_at, updated_at)
-		VALUES (?, ?, '', '2025-06-01T18:00:00Z', 'Test', 'UTC', 'published', 'share-1', 30, 'email', 0, 0, 0, 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"ev-1", "Event 1",
-	)
-	require.NoError(t, err)
-	testutil.SeedEventOwner(t, db, "ev-1", "org-1")
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO attendees (id, event_id, name, rsvp_status, rsvp_token, contact_method, dietary_notes, plus_ones, created_at, updated_at)
-		VALUES (?, ?, 'Guest', 'attending', 'token-1', 'email', '', 0, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
-		"att-1", "ev-1",
-	)
-	require.NoError(t, err)
-
-	// Seed notification log entries.
-	for _, n := range []struct {
-		id             string
-		status         string
-		deliveryStatus string
-	}{
-		{"n-1", "sent", "delivered"},
-		{"n-2", "sent", "delivered"},
-		{"n-3", "sent", "opened"},
-		{"n-4", "sent", "bounced"},
-		{"n-5", "failed", "unknown"},
+	seedStatsEvent(t, db, "notification-event", "published")
+	seedStatsInvitation(t, db, "notification-event", "notification-invitation", "attending")
+	for index, row := range []struct{ status, delivery string }{
+		{"sent", "delivered"}, {"sent", "opened"}, {"sent", "bounced"}, {"failed", "unknown"},
 	} {
-		_, err := db.ExecContext(ctx,
-			`INSERT INTO notification_log (id, event_id, attendee_id, channel, provider, status, delivery_status, recipient, subject, created_at)
-			VALUES (?, 'ev-1', 'att-1', 'email', 'smtp', ?, ?, 'test@test.com', 'Test', '2025-01-01T00:00:00Z')`,
-			n.id, n.status, n.deliveryStatus,
-		)
+		_, err := db.ExecContext(context.Background(), `INSERT INTO notification_log (
+			id, event_id, invitation_id, channel, provider, status, delivery_status,
+			recipient, subject, created_at
+		) VALUES (?, 'notification-event', 'notification-invitation', 'email', 'smtp',
+			?, ?, 'guest@example.com', 'Subject', ?)`, fmt.Sprintf("notification-%d", index), row.status, row.delivery, statsNow)
 		require.NoError(t, err)
 	}
 
-	stats, err := store.GetInstanceStats(ctx)
+	stats, err := NewStore(db).GetInstanceStats(context.Background())
 	require.NoError(t, err)
-
-	assert.Equal(t, 5, stats.Notifications.Total)
-	assert.Equal(t, 4, stats.Notifications.Sent)
+	assert.Equal(t, 4, stats.Notifications.Total)
+	assert.Equal(t, 3, stats.Notifications.Sent)
 	assert.Equal(t, 1, stats.Notifications.Failed)
-	assert.Equal(t, 2, stats.Notifications.Delivered)
+	assert.Equal(t, 1, stats.Notifications.Delivered)
 	assert.Equal(t, 1, stats.Notifications.Opened)
 	assert.Equal(t, 1, stats.Notifications.Bounced)
-	assert.Equal(t, 0, stats.Notifications.Complained)
 }

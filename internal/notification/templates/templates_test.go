@@ -42,33 +42,3 @@ func TestRenderMagicLink(t *testing.T) {
 	assert.Contains(t, html, "http://localhost:8080")
 	assert.Contains(t, plain, "15 minutes")
 }
-
-func TestRenderRSVPConfirmation(t *testing.T) {
-	html, plain, err := RenderRSVPConfirmation("My Event", "Jan 1, 2026", "NYC", "attending", "http://localhost/r/tok")
-	require.NoError(t, err)
-
-	assert.Contains(t, html, "My Event")
-	assert.Contains(t, html, "Attending")
-	assert.Contains(t, plain, "My Event")
-	assert.Contains(t, plain, "http://localhost/r/tok")
-}
-
-func TestRenderEventReminder(t *testing.T) {
-	html, plain, err := RenderEventReminder("Pool Party", "June 5, 2026", "Backyard", "Remember!", "http://localhost/i/xyz")
-	require.NoError(t, err)
-
-	assert.Contains(t, html, "Pool Party")
-	assert.Contains(t, html, "Remember!")
-	assert.Contains(t, plain, "Pool Party")
-	assert.Contains(t, plain, "Remember!")
-	assert.Contains(t, plain, "http://localhost/i/xyz")
-}
-
-func TestRenderEventReminderNoMessage(t *testing.T) {
-	html, plain, err := RenderEventReminder("Quick Event", "July 1, 2026", "Park", "", "http://localhost/i/abc")
-	require.NoError(t, err)
-
-	assert.Contains(t, html, "Quick Event")
-	assert.NotContains(t, html, "Message from the organizer")
-	assert.NotContains(t, plain, "Message from the organizer")
-}

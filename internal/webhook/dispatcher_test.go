@@ -48,7 +48,7 @@ func createTestWebhook(t *testing.T, ctx context.Context, store *Store, db datab
 		EventID:    eventID,
 		URL:        url,
 		Secret:     secret,
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 		Enabled:    true,
 	}
 	require.NoError(t, store.CreateWebhook(ctx, w))
@@ -59,7 +59,7 @@ func newTestDelivery(webhookID, payload string) *Delivery {
 	return &Delivery{
 		ID:        uuid.Must(uuid.NewV7()).String(),
 		WebhookID: webhookID,
-		EventType: "rsvp.created",
+		EventType: "event.published",
 		Payload:   payload,
 		Attempt:   0,
 	}
@@ -98,7 +98,7 @@ func TestDeliver_HMACSignature(t *testing.T) {
 	defer srv.Close()
 
 	w := createTestWebhook(t, ctx, store, db, srv.URL, secret)
-	payload := []byte(`{"eventType":"rsvp.created","data":{"x":1}}`)
+	payload := []byte(`{"eventType":"event.published","data":{"x":1}}`)
 	delivery := newTestDelivery(w.ID, string(payload))
 	require.NoError(t, store.CreateDelivery(ctx, delivery))
 
@@ -114,7 +114,7 @@ func TestDeliver_HMACSignature(t *testing.T) {
 	assert.Equal(t, expectedSig, gotSig, "signature must be sha256=hex(HMAC-SHA256(secret, body))")
 	assert.Equal(t, payload, gotBody, "body must be sent verbatim")
 	assert.Equal(t, "application/json", gotCType)
-	assert.Equal(t, "rsvp.created", gotEvent)
+	assert.Equal(t, "event.published", gotEvent)
 	assert.Equal(t, delivery.ID, gotDeliveryHdr)
 	assert.Equal(t, "OpenRSVP-Webhook/1.0", gotUA)
 
@@ -476,7 +476,7 @@ func TestDispatch_FiresEnabledWebhooks(t *testing.T) {
 	w := createTestWebhook(t, ctx, store, db, srv.URL, "whsec_x")
 
 	d := newTestDispatcher(store)
-	d.Dispatch(ctx, w.EventID, "rsvp.created", map[string]any{"guest": "alice"})
+	d.Dispatch(ctx, w.EventID, "event.published", map[string]any{"guest": "alice"})
 
 	select {
 	case <-received:
@@ -487,7 +487,7 @@ func TestDispatch_FiresEnabledWebhooks(t *testing.T) {
 	mu.Lock()
 	body := string(gotBody)
 	mu.Unlock()
-	assert.Contains(t, body, `"eventType":"rsvp.created"`)
+	assert.Contains(t, body, `"eventType":"event.published"`)
 	assert.Contains(t, body, `"guest":"alice"`)
 }
 
@@ -504,7 +504,7 @@ func TestDispatch_NoMatchingWebhooks(t *testing.T) {
 
 	d := newTestDispatcher(store)
 	// Should return cleanly with no webhooks registered.
-	d.Dispatch(ctx, eventID, "rsvp.created", map[string]any{"x": 1})
+	d.Dispatch(ctx, eventID, "event.published", map[string]any{"x": 1})
 }
 
 // TestSendTest_HappyPath exercises Service.SendTest and getDeliveryByID end to

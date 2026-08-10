@@ -17,7 +17,7 @@ import (
 type LogEntry struct {
 	ID             string
 	EventID        string
-	AttendeeID     string
+	InvitationID   string
 	Channel        string
 	Provider       string
 	Status         string // "pending", "sent", "failed"
@@ -89,7 +89,7 @@ func NewServiceWithOptions(registry *Registry, db database.DB, logger zerolog.Lo
 }
 
 // Send delivers a single notification and logs the result.
-func (s *Service) Send(ctx context.Context, eventID, attendeeID string, ch Channel, msg *Message) error {
+func (s *Service) Send(ctx context.Context, eventID, invitationID string, ch Channel, msg *Message) error {
 	provider, err := s.registry.Get(ch)
 	if err != nil {
 		return fmt.Errorf("get provider: %w", err)
@@ -113,7 +113,7 @@ func (s *Service) Send(ctx context.Context, eventID, attendeeID string, ch Chann
 	}
 
 	// Insert pending log entry with recipient and subject for tracking.
-	if err := s.insertLog(ctx, logID, eventID, attendeeID, string(ch), provider.Name(), "pending", "", msg.To, msg.Subject, nil, now); err != nil {
+	if err := s.insertLog(ctx, logID, eventID, invitationID, string(ch), provider.Name(), "pending", "", msg.To, msg.Subject, nil, now); err != nil {
 		s.logger.Error().Err(err).Msg("failed to insert notification log")
 	}
 
@@ -229,7 +229,7 @@ func (s *Service) applyUnsubscribeFooter(ctx context.Context, msg *Message, even
 }
 
 // SendBatch delivers multiple notifications and logs each result.
-func (s *Service) SendBatch(ctx context.Context, eventID, attendeeID string, ch Channel, msgs []*Message) []error {
+func (s *Service) SendBatch(ctx context.Context, eventID, invitationID string, ch Channel, msgs []*Message) []error {
 	provider, err := s.registry.Get(ch)
 	if err != nil {
 		errs := make([]error, len(msgs))
@@ -250,7 +250,7 @@ func (s *Service) SendBatch(ctx context.Context, eventID, attendeeID string, ch 
 			s.applyUnsubscribeFooter(ctx, msg, eventID)
 			s.embedOpenPixel(msg, logIDs[i])
 		}
-		if err := s.insertLog(ctx, logIDs[i], eventID, attendeeID, string(ch), provider.Name(), "pending", "", msg.To, msg.Subject, nil, now); err != nil {
+		if err := s.insertLog(ctx, logIDs[i], eventID, invitationID, string(ch), provider.Name(), "pending", "", msg.To, msg.Subject, nil, now); err != nil {
 			s.logger.Error().Err(err).Int("index", i).Msg("failed to insert notification log")
 		}
 	}
@@ -280,16 +280,20 @@ func (s *Service) SendBatch(ctx context.Context, eventID, attendeeID string, ch 
 }
 
 // insertLog creates a new notification_log row.
-func (s *Service) insertLog(ctx context.Context, id, eventID, attendeeID, channel, provider, status, errText, recipient, subject string, sentAt *time.Time, createdAt time.Time) error {
+func (s *Service) insertLog(ctx context.Context, id, eventID, invitationID, channel, provider, status, errText, recipient, subject string, sentAt *time.Time, createdAt time.Time) error {
 	var sentAtStr sql.NullString
 	if sentAt != nil {
 		sentAtStr = sql.NullString{String: sentAt.UTC().Format(time.RFC3339), Valid: true}
 	}
 
+	var invitationRef any
+	if invitationID != "" {
+		invitationRef = invitationID
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO notification_log (id, event_id, attendee_id, channel, provider, status, error, recipient, subject, sent_at, created_at)
+		`INSERT INTO notification_log (id, event_id, invitation_id, channel, provider, status, error, recipient, subject, sent_at, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, eventID, attendeeID, channel, provider, status, errText, recipient, subject, sentAtStr, createdAt.Format(time.RFC3339),
+		id, eventID, invitationRef, channel, provider, status, errText, recipient, subject, sentAtStr, createdAt.Format(time.RFC3339),
 	)
 	if err != nil {
 		return fmt.Errorf("insert notification log: %w", err)
@@ -324,7 +328,7 @@ func (s *Service) updateLog(ctx context.Context, id, status, errText, messageID 
 // GetLogByID returns a single notification log entry.
 func (s *Service) GetLogByID(ctx context.Context, id string) (*LogEntry, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, event_id, attendee_id, channel, provider, status, delivery_status, error,
+		`SELECT id, event_id, invitation_id, channel, provider, status, delivery_status, error,
 		        recipient, subject, message_id, sent_at, delivered_at, opened_at, clicked_at,
 		        bounced_at, bounce_type, complaint_at, created_at
 		 FROM notification_log WHERE id = ?`, id)
@@ -334,7 +338,7 @@ func (s *Service) GetLogByID(ctx context.Context, id string) (*LogEntry, error) 
 // GetLogsByEvent returns all notification log entries for an event.
 func (s *Service) GetLogsByEvent(ctx context.Context, eventID string) ([]*LogEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, event_id, attendee_id, channel, provider, status, delivery_status, error,
+		`SELECT id, event_id, invitation_id, channel, provider, status, delivery_status, error,
 		        recipient, subject, message_id, sent_at, delivered_at, opened_at, clicked_at,
 		        bounced_at, bounce_type, complaint_at, created_at
 		 FROM notification_log WHERE event_id = ? ORDER BY created_at DESC`, eventID)
@@ -357,20 +361,20 @@ func (s *Service) GetLogsByEvent(ctx context.Context, eventID string) ([]*LogEnt
 func scanLogEntry(row *sql.Row) (*LogEntry, error) {
 	var e LogEntry
 	var sentAt, deliveredAt, openedAt, clickedAt, bouncedAt, complaintAt sql.NullString
-	var messageID, bounceType, errText, attendeeID sql.NullString
+	var messageID, bounceType, errText, invitationID sql.NullString
 	var createdAtStr string
 
 	// created_at is RFC3339 TEXT: scan into a string then parse. lib/pq cannot
 	// convert a TEXT column straight into time.Time (go-sqlite3 silently does).
-	// attendee_id is nullable (ON DELETE SET NULL), so scan via NullString.
-	err := row.Scan(&e.ID, &e.EventID, &attendeeID, &e.Channel, &e.Provider,
+	// invitation_id is nullable (ON DELETE SET NULL), so scan via NullString.
+	err := row.Scan(&e.ID, &e.EventID, &invitationID, &e.Channel, &e.Provider,
 		&e.Status, &e.DeliveryStatus, &errText,
 		&e.Recipient, &e.Subject, &messageID, &sentAt, &deliveredAt, &openedAt, &clickedAt,
 		&bouncedAt, &bounceType, &complaintAt, &createdAtStr)
 	if err != nil {
 		return nil, err
 	}
-	e.AttendeeID = attendeeID.String
+	e.InvitationID = invitationID.String
 	e.Error = errText.String
 	e.MessageID = messageID.String
 	e.BounceType = bounceType.String
@@ -389,17 +393,17 @@ func scanLogEntry(row *sql.Row) (*LogEntry, error) {
 func scanLogEntryRow(rows *sql.Rows) (*LogEntry, error) {
 	var e LogEntry
 	var sentAt, deliveredAt, openedAt, clickedAt, bouncedAt, complaintAt sql.NullString
-	var messageID, bounceType, errText, attendeeID sql.NullString
+	var messageID, bounceType, errText, invitationID sql.NullString
 	var createdAtStr string
 
-	err := rows.Scan(&e.ID, &e.EventID, &attendeeID, &e.Channel, &e.Provider,
+	err := rows.Scan(&e.ID, &e.EventID, &invitationID, &e.Channel, &e.Provider,
 		&e.Status, &e.DeliveryStatus, &errText,
 		&e.Recipient, &e.Subject, &messageID, &sentAt, &deliveredAt, &openedAt, &clickedAt,
 		&bouncedAt, &bounceType, &complaintAt, &createdAtStr)
 	if err != nil {
 		return nil, err
 	}
-	e.AttendeeID = attendeeID.String
+	e.InvitationID = invitationID.String
 	e.Error = errText.String
 	e.MessageID = messageID.String
 	e.BounceType = bounceType.String

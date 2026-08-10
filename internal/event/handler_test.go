@@ -74,7 +74,7 @@ func TestHandleCreateEvent_Success(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "Birthday Party", data["title"])
 	assert.Equal(t, "draft", data["status"])
-	assert.NotEmpty(t, data["shareToken"])
+	assert.NotContains(t, data, "shareToken")
 }
 
 func TestHandleCreateEvent_InvalidJSON(t *testing.T) {
@@ -127,11 +127,6 @@ func TestHandleCreateEvent_ValidationErrorsReturn400(t *testing.T) {
 			name:    "location too long",
 			body:    map[string]any{"title": "Party", "eventDate": "2027-06-15T14:00", "location": strings.Repeat("a", 2000)},
 			wantMsg: "location must be",
-		},
-		{
-			name:    "invalid contactRequirement",
-			body:    map[string]any{"title": "Party", "eventDate": "2027-06-15T14:00", "contactRequirement": "carrier-pigeon"},
-			wantMsg: "invalid contactRequirement",
 		},
 		{
 			name:    "deadline after event date",

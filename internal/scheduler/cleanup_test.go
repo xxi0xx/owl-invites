@@ -18,9 +18,9 @@ func seedCleanupEvent(t *testing.T, db database.DB, userID, email, eventID, titl
 	t.Helper()
 	testutil.SeedUser(t, db, userID, email, "Test Owner")
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO events (id, title, event_date, retention_days, status, share_token, created_at, updated_at)
-		 VALUES (?, ?, ?, 30, 'published', ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-		eventID, title, eventDate, shareToken)
+		`INSERT INTO events (id, title, event_date, retention_days, status, created_at, updated_at)
+		 VALUES (?, ?, ?, 30, 'published', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+		eventID, title, eventDate)
 	require.NoError(t, err)
 	testutil.SeedEventOwner(t, db, eventID, userID)
 }

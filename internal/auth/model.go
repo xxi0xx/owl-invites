@@ -2,9 +2,8 @@ package auth
 
 import "time"
 
-// User is the persistent Owl Invites identity. The Name and IsAdmin fields are
-// retained as a compatibility surface for the existing organizer-oriented API
-// while event ownership is migrated to memberships.
+// User is the sole persistent Owl Invites identity. Event ownership is held by
+// event_memberships; no organizer identity table or ownership mirror exists.
 type User struct {
 	ID              string     `json:"id"`
 	Email           string     `json:"email"`
@@ -21,8 +20,8 @@ type User struct {
 	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
-// Organizer is a temporary source-compatible alias. New identity and
-// administration code should use User.
+// Organizer is a source-level vocabulary alias for User, not a second model or
+// persistence boundary. New identity and administration code should use User.
 type Organizer = User
 
 const (
@@ -84,16 +83,20 @@ type AuthResponse struct {
 // Rows from per-domain tables are returned as generic maps keyed by column
 // name to keep the export decoupled from each domain's model structs.
 type ExportDocument struct {
-	ExportedAt      string           `json:"exportedAt"`
-	Organizer       *Organizer       `json:"organizer"`
-	Events          []map[string]any `json:"events"`
-	Series          []map[string]any `json:"series"`
-	Attendees       []map[string]any `json:"attendees"`
-	Questions       []map[string]any `json:"questions"`
-	Comments        []map[string]any `json:"comments"`
-	Messages        []map[string]any `json:"messages"`
-	Webhooks        []map[string]any `json:"webhooks"`
-	Reminders       []map[string]any `json:"reminders"`
-	InviteCards     []map[string]any `json:"inviteCards"`
-	NotificationLog []map[string]any `json:"notificationLog"`
+	ExportedAt        string           `json:"exportedAt"`
+	Organizer         *Organizer       `json:"organizer"`
+	Events            []map[string]any `json:"events"`
+	Series            []map[string]any `json:"series"`
+	Invitations       []map[string]any `json:"invitations"`
+	Guests            []map[string]any `json:"guests"`
+	Responses         []map[string]any `json:"responses"`
+	GuestResponses    []map[string]any `json:"guestResponses"`
+	Questions         []map[string]any `json:"questions"`
+	InvitationAnswers []map[string]any `json:"invitationAnswers"`
+	GuestAnswers      []map[string]any `json:"guestAnswers"`
+	Messages          []map[string]any `json:"invitationMessages"`
+	Webhooks          []map[string]any `json:"webhooks"`
+	Reminders         []map[string]any `json:"reminders"`
+	InviteCards       []map[string]any `json:"inviteCards"`
+	NotificationLog   []map[string]any `json:"notificationLog"`
 }

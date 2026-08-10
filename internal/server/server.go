@@ -13,8 +13,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/yannkr/openrsvp/internal/auth"
-	"github.com/yannkr/openrsvp/internal/calendar"
-	"github.com/yannkr/openrsvp/internal/comment"
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/event"
@@ -23,11 +21,9 @@ import (
 	"github.com/yannkr/openrsvp/internal/instanceconfig"
 	invitationdomain "github.com/yannkr/openrsvp/internal/invitation"
 	"github.com/yannkr/openrsvp/internal/invite"
-	"github.com/yannkr/openrsvp/internal/message"
 	"github.com/yannkr/openrsvp/internal/notification"
 	"github.com/yannkr/openrsvp/internal/notification/templates"
 	"github.com/yannkr/openrsvp/internal/question"
-	"github.com/yannkr/openrsvp/internal/rsvp"
 	"github.com/yannkr/openrsvp/internal/scheduler"
 	"github.com/yannkr/openrsvp/internal/security"
 	"github.com/yannkr/openrsvp/internal/stats"
@@ -45,14 +41,11 @@ type Server struct {
 	authHandler           *auth.Handler
 	eventHandler          *event.Handler
 	seriesHandler         *event.SeriesHandler
-	rsvpHandler           *rsvp.Handler
 	inviteHandler         *invite.Handler
 	invitationHandler     *invitationdomain.Handler
-	messageHandler        *message.Handler
 	questionHandler       *question.Handler
 	feedbackHandler       *feedback.Handler
 	reminderHandler       *scheduler.Handler
-	commentHandler        *comment.Handler
 	webhookHandler        *webhook.Handler
 	notifHandler          *notification.Handler
 	notifService          *notification.Service
@@ -64,46 +57,6 @@ type Server struct {
 	scheduler             *scheduler.Scheduler
 	securityMw            *security.Middleware
 	uploadsDir            string
-}
-
-// commentEventStoreAdapter adapts event.Service to comment.EventStore.
-type commentEventStoreAdapter struct {
-	svc *event.Service
-}
-
-func (a *commentEventStoreAdapter) FindByShareToken(ctx context.Context, shareToken string) (*comment.Event, error) {
-	ev, err := a.svc.GetByShareToken(ctx, shareToken)
-	if err != nil {
-		return nil, err
-	}
-	if ev == nil {
-		return nil, nil
-	}
-	return &comment.Event{
-		ID:              ev.ID,
-		Status:          ev.Status,
-		CommentsEnabled: ev.CommentsEnabled,
-	}, nil
-}
-
-// commentRSVPStoreAdapter adapts rsvp.Store to comment.RSVPStore.
-type commentRSVPStoreAdapter struct {
-	store *rsvp.Store
-}
-
-func (a *commentRSVPStoreAdapter) FindByToken(ctx context.Context, token string) (*comment.Attendee, error) {
-	att, err := a.store.FindByRSVPToken(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	if att == nil {
-		return nil, nil
-	}
-	return &comment.Attendee{
-		ID:      att.ID,
-		EventID: att.EventID,
-		Name:    att.Name,
-	}, nil
 }
 
 // New creates a new Server instance.
@@ -182,67 +135,10 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	inviteService := invite.NewService(inviteStore, uploadsDir)
 	inviteHandler := invite.NewHandler(inviteService, authMiddleware, invite.OrganizerFromCtx(organizerFromCtx), uploadsDir, invite.EventOwnershipChecker(checkEventOwner), logger)
 
-	// Configure SMS availability on event service.
-	eventService.SetSMSEnabled(cfg.SMSEnabled())
-
-	// Wire up RSVP layer.
-	rsvpStore := rsvp.NewStore(db)
-	rsvpService := rsvp.NewService(rsvpStore, eventService, inviteService, logger)
-	rsvpService.SetSMSEnabled(cfg.SMSEnabled())
-	rsvpService.SetBaseURL(cfg.BaseURL)
-	rsvpHandler := rsvp.NewHandler(rsvpService, authMiddleware, rsvp.OrganizerFromCtx(organizerFromCtx), rsvp.EventOwnershipChecker(checkEventOwner), logger)
-
 	// Wire up question layer.
 	questionStore := question.NewStore(db)
 	questionService := question.NewService(questionStore)
 	questionHandler := question.NewHandler(questionService, authMiddleware, question.OrganizerFromCtx(organizerFromCtx), question.EventOwnershipChecker(checkEventOwner), logger)
-
-	// Wire question validation and listing into the RSVP service.
-	rsvpService.SetValidateAnswers(questionService.ValidateAndSaveAnswers)
-	rsvpService.SetListQuestions(func(ctx context.Context, eventID string) (any, error) {
-		return questionService.ListByEvent(ctx, eventID)
-	})
-	rsvpService.SetGetAnswers(func(ctx context.Context, attendeeID string) (any, error) {
-		return questionService.GetAnswersForAttendee(ctx, attendeeID)
-	})
-	rsvpService.SetGetExportQuestions(func(ctx context.Context, eventID string) (*rsvp.ExportQuestionsData, error) {
-		questions, err := questionService.ListByEvent(ctx, eventID)
-		if err != nil {
-			return nil, err
-		}
-		if len(questions) == 0 {
-			return nil, nil
-		}
-		answersByEvent, err := questionService.GetAnswersByEvent(ctx, eventID)
-		if err != nil {
-			return nil, err
-		}
-		data := &rsvp.ExportQuestionsData{
-			Labels:            make([]string, len(questions)),
-			QuestionIDs:       make([]string, len(questions)),
-			AnswersByAttendee: make(map[string]map[string]string),
-		}
-		for i, q := range questions {
-			data.Labels[i] = q.Label
-			data.QuestionIDs[i] = q.ID
-		}
-		for attendeeID, answers := range answersByEvent {
-			if data.AnswersByAttendee[attendeeID] == nil {
-				data.AnswersByAttendee[attendeeID] = make(map[string]string)
-			}
-			for _, a := range answers {
-				data.AnswersByAttendee[attendeeID][a.QuestionID] = a.Answer
-			}
-		}
-		return data, nil
-	})
-
-	// Wire up comment/guestbook layer.
-	commentStore := comment.NewStore(db)
-	commentEventAdapter := &commentEventStoreAdapter{svc: eventService}
-	commentRSVPAdapter := &commentRSVPStoreAdapter{store: rsvpStore}
-	commentService := comment.NewService(commentStore, commentEventAdapter, commentRSVPAdapter)
-	commentHandler := comment.NewHandler(commentService, authMiddleware, comment.OrganizerFromCtx(organizerFromCtx), comment.EventOwnershipChecker(checkEventOwner), logger)
 
 	// Wire up webhook layer.
 	webhookStore := webhook.NewStore(db)
@@ -278,13 +174,9 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		panic("invalid invitation security configuration: " + err.Error())
 	}
 	if notifRegistry.Has(notification.ChannelEmail) {
-		invitationService.SetEmailSender(func(ctx context.Context, to, subject, htmlBody, plainBody string) error {
-			provider, err := notifRegistry.Get(notification.ChannelEmail)
-			if err != nil {
-				return err
-			}
-			_, sendErr := provider.Send(ctx, &notification.Message{To: to, Subject: subject, Body: htmlBody, Plain: plainBody})
-			return sendErr
+		invitationService.SetEmailSender(func(ctx context.Context, eventID, invitationID, to, subject, htmlBody, plainBody string) error {
+			return notifService.Send(ctx, eventID, invitationID, notification.ChannelEmail,
+				&notification.Message{To: to, Subject: subject, Body: htmlBody, Plain: plainBody})
 		})
 	}
 	invitationHandler := invitationdomain.NewHandler(invitationService, authMiddleware,
@@ -305,170 +197,6 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				Plain:   plainBody,
 			})
 			return sendErr
-		})
-	}
-
-	// Wire email sending into RSVP service (for RSVP lookup magic links).
-	if notifRegistry.Has(notification.ChannelEmail) {
-		rsvpService.SetEmailSender(func(ctx context.Context, to, subject, htmlBody, plainBody string) error {
-			provider, err := notifRegistry.Get(notification.ChannelEmail)
-			if err != nil {
-				return err
-			}
-			_, sendErr := provider.Send(ctx, &notification.Message{
-				To:      to,
-				Subject: subject,
-				Body:    htmlBody,
-				Plain:   plainBody,
-			})
-			return sendErr
-		})
-	}
-
-	// Wire RSVP confirmation emails into the RSVP service.
-	if notifRegistry.Has(notification.ChannelEmail) {
-		rsvpService.SetNotifyRSVP(func(ctx context.Context, eventID string, attendee *rsvp.Attendee) {
-			ev, err := eventService.GetByID(ctx, eventID)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("rsvp notify: failed to get event")
-				return
-			}
-
-			// Dispatch webhook for RSVP event.
-			go webhookDispatcher.Dispatch(context.Background(), eventID, "rsvp.created", map[string]any{
-				"attendeeId":   attendee.ID,
-				"attendeeName": attendee.Name,
-				"rsvpStatus":   attendee.RSVPStatus,
-				"eventId":      eventID,
-			})
-
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
-			location := ev.Location
-			if location == "" {
-				location = "TBD"
-			}
-
-			// Send confirmation email to the attendee.
-			if attendee.Email != nil && *attendee.Email != "" {
-				modifyURL := cfg.BaseURL + "/r/" + attendee.RSVPToken
-				htmlBody, plainBody, err := templates.RenderRSVPConfirmation(ev.Title, eventDate, location, attendee.RSVPStatus, modifyURL)
-				if err != nil {
-					logger.Error().Err(err).Str("attendee_id", attendee.ID).Msg("rsvp notify: failed to render attendee template")
-				} else {
-					confirmMsg := &notification.Message{
-						To:      *attendee.Email,
-						Subject: "RSVP Confirmation — " + ev.Title,
-						Body:    htmlBody,
-						Plain:   plainBody,
-					}
-
-					// Attach ICS calendar file for attending and maybe RSVPs.
-					// Use the RSVP management URL so the guest can manage their response.
-					if attendee.RSVPStatus == "attending" || attendee.RSVPStatus == "maybe" {
-						rsvpURL := cfg.BaseURL + "/r/" + attendee.RSVPToken
-						icsData := calendar.GenerateICS(calendar.EventData{
-							ID:          ev.ID,
-							Title:       ev.Title,
-							Description: ev.Description,
-							Location:    ev.Location,
-							EventDate:   ev.EventDate,
-							EndDate:     ev.EndDate,
-							Timezone:    ev.Timezone,
-							URL:         rsvpURL,
-						})
-						confirmMsg.Attachments = []notification.Attachment{
-							{
-								Filename:    "event.ics",
-								ContentType: "text/calendar; charset=utf-8; method=PUBLISH",
-								Data:        []byte(icsData),
-							},
-						}
-					}
-
-					if err := notifService.Send(ctx, eventID, attendee.ID, notification.ChannelEmail, confirmMsg); err != nil {
-						logger.Error().Err(err).Str("attendee_email", *attendee.Email).Msg("rsvp notify: failed to send attendee email")
-					}
-				}
-			}
-
-			// Notify the organizer about the new RSVP.
-			organizer, err := authStore.FindOrganizerByID(ctx, ev.OrganizerID)
-			if err != nil {
-				logger.Error().Err(err).Str("organizer_id", ev.OrganizerID).Msg("rsvp notify: failed to get organizer")
-				return
-			}
-			if organizer == nil || organizer.Email == "" {
-				return
-			}
-
-			guestEmail := ""
-			if attendee.Email != nil {
-				guestEmail = *attendee.Email
-			}
-			guestPhone := ""
-			if attendee.Phone != nil {
-				guestPhone = *attendee.Phone
-			}
-			dashboardURL := cfg.BaseURL + "/events/" + eventID
-
-			htmlBody, plainBody, err := templates.RenderOrganizerRSVPNotification(
-				ev.Title, attendee.Name, attendee.RSVPStatus,
-				guestEmail, guestPhone, attendee.PlusOnes, dashboardURL,
-			)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("rsvp notify: failed to render organizer template")
-				return
-			}
-
-			if err := notifService.Send(ctx, eventID, attendee.ID, notification.ChannelEmail, &notification.Message{
-				To:      organizer.Email,
-				Subject: "New RSVP — " + attendee.Name + " — " + ev.Title + " (" + ev.EventDate.Format("Jan 2") + ")",
-				Body:    htmlBody,
-				Plain:   plainBody,
-			}); err != nil {
-				logger.Error().Err(err).Str("organizer_email", organizer.Email).Msg("rsvp notify: failed to send organizer email")
-			}
-		})
-	}
-
-	// Wire import invitation emails into the RSVP service.
-	if notifRegistry.Has(notification.ChannelEmail) {
-		rsvpService.SetOnImportInvite(func(ctx context.Context, eventID string, attendee *rsvp.Attendee) {
-			ev, err := eventService.GetByID(ctx, eventID)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("import invite: failed to get event")
-				return
-			}
-
-			if attendee.Email == nil || *attendee.Email == "" {
-				return
-			}
-
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
-			location := ev.Location
-			if location == "" {
-				location = "TBD"
-			}
-			inviteURL := cfg.BaseURL + "/i/" + ev.ShareToken
-
-			htmlBody, plainBody, err := templates.RenderEventReminder(
-				ev.Title, eventDate, location,
-				"You've been invited! Click the link below to RSVP.",
-				inviteURL,
-			)
-			if err != nil {
-				logger.Error().Err(err).Str("attendee_id", attendee.ID).Msg("import invite: failed to render template")
-				return
-			}
-
-			if err := notifService.Send(ctx, eventID, attendee.ID, notification.ChannelEmail, &notification.Message{
-				To:      *attendee.Email,
-				Subject: "You're Invited — " + ev.Title,
-				Body:    htmlBody,
-				Plain:   plainBody,
-			}); err != nil {
-				logger.Error().Err(err).Str("attendee_email", *attendee.Email).Msg("import invite: failed to send email")
-			}
 		})
 	}
 
@@ -511,43 +239,6 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		})
 	}
 
-	// Wire waitlist promotion notifications into the RSVP service.
-	if notifRegistry.Has(notification.ChannelEmail) {
-		rsvpService.SetNotifyWaitlistPromotion(func(ctx context.Context, eventID string, attendee *rsvp.Attendee) {
-			ev, err := eventService.GetByID(ctx, eventID)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("waitlist promote: failed to get event")
-				return
-			}
-
-			if attendee.Email == nil || *attendee.Email == "" {
-				return
-			}
-
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
-			location := ev.Location
-			if location == "" {
-				location = "TBD"
-			}
-			modifyURL := cfg.BaseURL + "/r/" + attendee.RSVPToken
-
-			htmlBody, plainBody, err := templates.RenderWaitlistPromotion(ev.Title, eventDate, location, modifyURL)
-			if err != nil {
-				logger.Error().Err(err).Str("attendee_id", attendee.ID).Msg("waitlist promote: failed to render template")
-				return
-			}
-
-			if err := notifService.Send(ctx, eventID, attendee.ID, notification.ChannelEmail, &notification.Message{
-				To:      *attendee.Email,
-				Subject: "A spot opened up! — " + ev.Title,
-				Body:    htmlBody,
-				Plain:   plainBody,
-			}); err != nil {
-				logger.Error().Err(err).Str("attendee_email", *attendee.Email).Msg("waitlist promote: failed to send email")
-			}
-		})
-	}
-
 	// Wire up feedback layer.
 	feedbackSvc := feedback.NewService(cfg.FeedbackGitHubToken, cfg.FeedbackGitHubRepo, cfg.FeedbackEmail)
 	if cfg.FeedbackGitHubToken == "" && cfg.FeedbackEmail == "" {
@@ -585,7 +276,6 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		GeneralRateLimit: 200,
 		RateWindow:       1 * time.Minute,
 		CSRFExcludePaths: []string{
-			"/api/v1/rsvp/public/",
 			"/api/v1/invitations/exchange",
 			"/api/v1/invitations/recovery/request",
 			"/api/v1/invitations/recovery/exchange",
@@ -595,134 +285,11 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 			"/api/v1/auth/verify",
 			"/api/v1/auth/account-invites/accept", // one-time account capability
 			"/api/v1/setup/bootstrap",             // one-time env-token-authorized setup
-			"/api/v1/comments/public/",
-			"/api/v1/feedback/public", // unauthenticated guest bug reports
-			"/api/v1/unsubscribe",     // token-based email opt-out (no session)
+			"/api/v1/feedback/public",             // unauthenticated guest bug reports
+			"/api/v1/unsubscribe",                 // token-based email opt-out (no session)
 		},
 		IsProduction: cfg.Env == "production",
 	})
-
-	// Wire up message layer.
-	messageStore := message.NewStore(db)
-	messageService := message.NewService(messageStore, logger)
-	attendeeFromToken := func(ctx context.Context, rsvpToken string) (*message.AttendeeInfo, error) {
-		attendee, err := rsvpService.GetByToken(ctx, rsvpToken)
-		if err != nil {
-			return nil, err
-		}
-		return &message.AttendeeInfo{ID: attendee.ID, EventID: attendee.EventID}, nil
-	}
-	messageHandler := message.NewHandler(messageService, authMiddleware, security.RateLimitMiddleware(secMw.RSVPRateLimiter), message.OrganizerFromCtx(organizerFromCtx), attendeeFromToken, message.EventOwnershipChecker(checkEventOwner), logger)
-
-	// Wire email dispatch into message service so organizer messages are
-	// delivered to attendees via email.
-	if notifRegistry.Has(notification.ChannelEmail) {
-		messageService.SetNotifyAttendees(func(ctx context.Context, eventID, recipientGroup, subject, body string) {
-			ev, err := eventService.GetByID(ctx, eventID)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("message notify: failed to get event")
-				return
-			}
-
-			attendees, err := rsvpService.ListByEvent(ctx, eventID)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("message notify: failed to list attendees")
-				return
-			}
-
-			inviteURL := cfg.BaseURL + "/i/" + ev.ShareToken
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
-			location := ev.Location
-			if location == "" {
-				location = "TBD"
-			}
-
-			sent := 0
-			for _, a := range attendees {
-				// Filter by group.
-				if recipientGroup != "all" && a.RSVPStatus != recipientGroup {
-					continue
-				}
-				if a.Email == nil || *a.Email == "" {
-					continue
-				}
-
-				htmlBody, plainBody, err := templates.RenderEventReminder(ev.Title, eventDate, location, body, inviteURL)
-				if err != nil {
-					logger.Error().Err(err).Str("attendee_id", a.ID).Msg("message notify: failed to render template")
-					continue
-				}
-
-				if err := notifService.Send(ctx, eventID, a.ID, notification.ChannelEmail, &notification.Message{
-					To:      *a.Email,
-					Subject: subject,
-					Body:    htmlBody,
-					Plain:   plainBody,
-				}); err != nil {
-					logger.Error().Err(err).Str("attendee_email", *a.Email).Msg("message notify: failed to send email")
-					continue
-				}
-				sent++
-			}
-
-			logger.Info().
-				Str("event_id", eventID).
-				Str("group", recipientGroup).
-				Int("sent", sent).
-				Msg("message notify: emails dispatched")
-		})
-
-		messageService.SetNotifyOrganizer(func(ctx context.Context, eventID, attendeeID, subject, body string) {
-			ev, err := eventService.GetByID(ctx, eventID)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("attendee notify: failed to get event")
-				return
-			}
-
-			organizer, err := authStore.FindOrganizerByID(ctx, ev.OrganizerID)
-			if err != nil {
-				logger.Error().Err(err).Str("organizer_id", ev.OrganizerID).Msg("attendee notify: failed to get organizer")
-				return
-			}
-			if organizer == nil || organizer.Email == "" {
-				return
-			}
-
-			// Look up attendee name for a personalized notification.
-			senderName := "A guest"
-			if attendee, err := rsvpStore.FindByID(ctx, attendeeID); err == nil && attendee != nil {
-				senderName = attendee.Name
-			}
-
-			eventDate := ev.EventDate.Format("January 2, 2006 at 3:04 PM")
-			location := ev.Location
-			if location == "" {
-				location = "TBD"
-			}
-
-			dashboardURL := cfg.BaseURL + "/events/" + eventID + "/messages"
-			htmlBody, plainBody, err := templates.RenderEventReminder(
-				ev.Title,
-				eventDate,
-				location,
-				senderName+" sent you a message:\n\n"+body,
-				dashboardURL,
-			)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", eventID).Msg("attendee notify: failed to render template")
-				return
-			}
-
-			if err := notifService.Send(ctx, eventID, attendeeID, notification.ChannelEmail, &notification.Message{
-				To:      organizer.Email,
-				Subject: "New message from " + senderName + " — " + subject,
-				Body:    htmlBody,
-				Plain:   plainBody,
-			}); err != nil {
-				logger.Error().Err(err).Str("organizer_email", organizer.Email).Msg("attendee notify: failed to send email")
-			}
-		})
-	}
 
 	// Wire up scheduler and reminder layer.
 	reminderStore := scheduler.NewReminderStore(db)
@@ -802,66 +369,31 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		}
 	})
 
-	// Send cancellation notifications to attending/maybe attendees when an event is cancelled.
+	// Send cancellation notifications through isolated invitation destinations.
 	if notifRegistry.Has(notification.ChannelEmail) {
 		eventService.SetOnCancel(func(ctx context.Context, e *event.Event) {
 			go webhookDispatcher.Dispatch(context.Background(), e.ID, "event.cancelled", map[string]any{
 				"eventId": e.ID,
 				"title":   e.Title,
 			})
-
-			attendees, err := rsvpService.ListByEvent(ctx, e.ID)
-			if err != nil {
-				logger.Error().Err(err).Str("event_id", e.ID).Msg("cancel notify: failed to list attendees")
-				return
+			if _, err := invitationService.Broadcast(ctx, e.ID, nil, invitationdomain.MessageRequest{
+				RecipientGroup: "all",
+				Subject:        "Event cancelled — " + e.Title,
+				Body:           "This event has been cancelled by the organizer.",
+			}); err != nil {
+				logger.Error().Err(err).Str("event_id", e.ID).
+					Msg("cancellation invitation delivery failed")
 			}
-
-			eventDate := e.EventDate.Format("January 2, 2006 at 3:04 PM")
-			location := e.Location
-			if location == "" {
-				location = "TBD"
-			}
-			cancelMessage := "This event has been cancelled by the organizer. We apologize for any inconvenience."
-
-			sent := 0
-			for _, a := range attendees {
-				if a.RSVPStatus != "attending" && a.RSVPStatus != "maybe" {
-					continue
-				}
-				if a.Email == nil || *a.Email == "" {
-					continue
-				}
-
-				htmlBody, plainBody, err := templates.RenderEventReminder(
-					e.Title, eventDate, location, cancelMessage,
-					cfg.BaseURL+"/i/"+e.ShareToken,
-				)
-				if err != nil {
-					logger.Error().Err(err).Str("attendee_id", a.ID).Msg("cancel notify: failed to render template")
-					continue
-				}
-
-				if err := notifService.Send(ctx, e.ID, a.ID, notification.ChannelEmail, &notification.Message{
-					To:      *a.Email,
-					Subject: "Event Cancelled -- " + e.Title,
-					Body:    htmlBody,
-					Plain:   plainBody,
-				}); err != nil {
-					logger.Error().Err(err).Str("attendee_email", *a.Email).Msg("cancel notify: failed to send email")
-					continue
-				}
-				sent++
-			}
-
-			logger.Info().
-				Str("event_id", e.ID).
-				Int("sent", sent).
-				Msg("cancel notify: cancellation emails dispatched")
 		})
 	}
 
 	sched := scheduler.New(logger)
-	reminderJob := scheduler.NewReminderJob(reminderStore, db, notifService, cfg.BaseURL, logger)
+	reminderJob := scheduler.NewReminderJob(reminderStore,
+		func(ctx context.Context, eventID, group, subject, body string) (int, error) {
+			return invitationService.Broadcast(ctx, eventID, nil, invitationdomain.MessageRequest{
+				RecipientGroup: group, Subject: subject, Body: body,
+			})
+		}, logger)
 	cleanupJob := scheduler.NewCleanupJob(db, logger)
 
 	// Wire retention warning notifications into the cleanup job.
@@ -998,14 +530,11 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 		authHandler:           authHandler,
 		eventHandler:          eventHandler,
 		seriesHandler:         seriesHandler,
-		rsvpHandler:           rsvpHandler,
 		inviteHandler:         inviteHandler,
 		invitationHandler:     invitationHandler,
-		messageHandler:        messageHandler,
 		questionHandler:       questionHandler,
 		feedbackHandler:       feedbackHandler,
 		reminderHandler:       reminderHandler,
-		commentHandler:        commentHandler,
 		webhookHandler:        webhookHandler,
 		notifHandler:          notifHandler,
 		notifService:          notifService,

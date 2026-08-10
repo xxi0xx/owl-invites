@@ -175,3 +175,19 @@ type OpenEnrollmentRequest struct {
 	PreferredDeliveryMethod string   `json:"preferredDeliveryMethod"`
 	GuestNames              []string `json:"guestNames"`
 }
+
+type MessageRequest struct {
+	RecipientGroup string `json:"recipientGroup"`
+	Subject        string `json:"subject"`
+	Body           string `json:"body"`
+}
+
+type InvitationMessage struct {
+	ID             string    `json:"id"`
+	EventID        string    `json:"eventId"`
+	SenderUserID   *string   `json:"senderUserId,omitempty"`
+	RecipientGroup string    `json:"recipientGroup"`
+	Subject        string    `json:"subject"`
+	Body           string    `json:"body"`
+	CreatedAt      time.Time `json:"createdAt"`
+}

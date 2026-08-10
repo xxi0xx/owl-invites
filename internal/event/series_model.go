@@ -18,11 +18,9 @@ type EventSeries struct {
 	MaxOccurrences          *int       `json:"maxOccurrences,omitempty"`
 	SeriesStatus            string     `json:"seriesStatus"`
 	RetentionDays           int        `json:"retentionDays"`
-	ContactRequirement      string     `json:"contactRequirement"`
 	ShowHeadcount           bool       `json:"showHeadcount"`
 	ShowGuestList           bool       `json:"showGuestList"`
 	RSVPDeadlineOffsetHours *int       `json:"rsvpDeadlineOffsetHours,omitempty"`
-	MaxCapacity             *int       `json:"maxCapacity,omitempty"`
 	CreatedAt               time.Time  `json:"createdAt"`
 	UpdatedAt               time.Time  `json:"updatedAt"`
 }
@@ -40,11 +38,9 @@ type CreateSeriesRequest struct {
 	RecurrenceEnd           *string `json:"recurrenceEnd,omitempty"`
 	MaxOccurrences          *int    `json:"maxOccurrences,omitempty"`
 	RetentionDays           *int    `json:"retentionDays,omitempty"`
-	ContactRequirement      *string `json:"contactRequirement,omitempty"`
 	ShowHeadcount           *bool   `json:"showHeadcount,omitempty"`
 	ShowGuestList           *bool   `json:"showGuestList,omitempty"`
 	RSVPDeadlineOffsetHours *int    `json:"rsvpDeadlineOffsetHours,omitempty"`
-	MaxCapacity             *int    `json:"maxCapacity,omitempty"`
 }
 
 // UpdateSeriesRequest is the request body for updating an existing event series.
@@ -58,9 +54,7 @@ type UpdateSeriesRequest struct {
 	RecurrenceEnd           *string `json:"recurrenceEnd,omitempty"`
 	MaxOccurrences          *int    `json:"maxOccurrences,omitempty"`
 	RetentionDays           *int    `json:"retentionDays,omitempty"`
-	ContactRequirement      *string `json:"contactRequirement,omitempty"`
 	ShowHeadcount           *bool   `json:"showHeadcount,omitempty"`
 	ShowGuestList           *bool   `json:"showGuestList,omitempty"`
 	RSVPDeadlineOffsetHours *int    `json:"rsvpDeadlineOffsetHours,omitempty"`
-	MaxCapacity             *int    `json:"maxCapacity,omitempty"`
 }

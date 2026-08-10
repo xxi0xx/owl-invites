@@ -36,20 +36,49 @@ func NewHandler(service *Service, authMiddleware func(http.Handler) http.Handler
 		checkEventAccess: checkEventAccess, secureCookies: secureCookies, logger: logger}
 }
 
-// OrganizerRoutes is mounted below /api/v1/events/{eventId}.
-func (h *Handler) OrganizerRoutes() chi.Router {
+// OrganizerInvitationRoutes is mounted below
+// /api/v1/events/{eventId}/invitations. Keeping this mount narrow prevents the
+// invitation subrouter from shadowing the event's own GET/PUT routes.
+func (h *Handler) OrganizerInvitationRoutes() chi.Router {
 	r := chi.NewRouter()
 	r.Use(h.authMiddleware)
-	r.Get("/invitations", h.list)
-	r.Post("/invitations", h.create)
-	r.Get("/invitations/{invitationId}", h.get)
-	r.Post("/invitations/{invitationId}/deliver", h.deliver)
-	r.Post("/invitations/{invitationId}/rotate", h.rotate)
-	r.Post("/invitations/{invitationId}/revoke", h.revoke)
-	r.Get("/open-enrollment", h.getOpen)
-	r.Put("/open-enrollment", h.configureOpen)
-	r.Post("/open-enrollment/rotate", h.rotateOpen)
+	r.Get("/", h.list)
+	r.Post("/", h.create)
+	r.Get("/{invitationId}", h.get)
+	r.Post("/{invitationId}/deliver", h.deliver)
+	r.Post("/{invitationId}/rotate", h.rotate)
+	r.Post("/{invitationId}/revoke", h.revoke)
+	r.Post("/messages", h.message)
 	return r
+}
+
+// OrganizerOpenEnrollmentRoutes is mounted below
+// /api/v1/events/{eventId}/open-enrollment.
+func (h *Handler) OrganizerOpenEnrollmentRoutes() chi.Router {
+	r := chi.NewRouter()
+	r.Use(h.authMiddleware)
+	r.Get("/", h.getOpen)
+	r.Put("/", h.configureOpen)
+	r.Post("/rotate", h.rotateOpen)
+	return r
+}
+
+func (h *Handler) message(w http.ResponseWriter, r *http.Request) {
+	eventID, userID, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req MessageRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	sent, err := h.service.Broadcast(r.Context(), eventID, &userID, req)
+	if h.writeServiceError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]int{"sent": sent}})
 }
 
 // PublicRoutes is mounted below /api/v1/invitations. Mutation routes that

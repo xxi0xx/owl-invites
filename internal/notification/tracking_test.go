@@ -14,9 +14,9 @@ import (
 	"github.com/yannkr/openrsvp/internal/testutil"
 )
 
-// createParentRecordsForNotification inserts the minimal organizer, event,
-// and attendee records required by foreign key constraints on notification_log.
-func createParentRecordsForNotification(t *testing.T, ctx context.Context, db database.DB, eventID, attendeeID string) {
+// createParentRecordsForNotification inserts the minimal event and invitation
+// records required by foreign key constraints on notification_log.
+func createParentRecordsForNotification(t *testing.T, ctx context.Context, db database.DB, eventID, invitationID string) {
 	t.Helper()
 	now := time.Now().UTC().Format(time.RFC3339)
 	orgID := uuid.Must(uuid.NewV7()).String()
@@ -24,25 +24,27 @@ func createParentRecordsForNotification(t *testing.T, ctx context.Context, db da
 	testutil.SeedUser(t, db, orgID, "test-"+orgID[:8]+"@example.com", "Test Organizer")
 
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO events (id, title, event_date, status, share_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		eventID, "Test Event", "2026-06-15T14:00:00Z", "published", "share-"+eventID[:8], now, now)
+		`INSERT INTO events (id, title, event_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, "Test Event", "2026-06-15T14:00:00Z", "published", now, now)
 	require.NoError(t, err)
 	testutil.SeedEventOwner(t, db, eventID, orgID)
 
 	_, err = db.ExecContext(ctx,
-		`INSERT INTO attendees (id, event_id, name, rsvp_status, rsvp_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		attendeeID, eventID, "Alice", "attending", "rsvp-"+attendeeID[:8], now, now)
+		`INSERT INTO invitations (id, event_id, label, preferred_delivery_method,
+		 additional_guest_allowance, source, access_id, token_version, created_at, updated_at)
+		 VALUES (?, ?, 'Alice household', 'email', 0, 'private', ?, 1, ?, ?)`,
+		invitationID, eventID, "access-"+invitationID[:8], now, now)
 	require.NoError(t, err)
 }
 
 // insertNotificationLog inserts a notification_log row with the given fields.
-func insertNotificationLog(t *testing.T, ctx context.Context, db database.DB, logID, eventID, attendeeID, status, deliveryStatus, messageID string) {
+func insertNotificationLog(t *testing.T, ctx context.Context, db database.DB, logID, eventID, invitationID, status, deliveryStatus, messageID string) {
 	t.Helper()
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO notification_log (id, event_id, attendee_id, channel, provider, status, delivery_status, error, recipient, subject, message_id, sent_at, created_at)
+		`INSERT INTO notification_log (id, event_id, invitation_id, channel, provider, status, delivery_status, error, recipient, subject, message_id, sent_at, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		logID, eventID, attendeeID, "email", "smtp", status, deliveryStatus, "", "test@example.com", "Test Subject", messageID, now, now,
+		logID, eventID, invitationID, "email", "smtp", status, deliveryStatus, "", "test@example.com", "Test Subject", messageID, now, now,
 	)
 	require.NoError(t, err)
 }
@@ -272,7 +274,7 @@ func TestTrackingService_GetEmailStats(t *testing.T) {
 	for _, e := range entries {
 		logID := uuid.Must(uuid.NewV7()).String()
 		_, err := db.ExecContext(ctx,
-			`INSERT INTO notification_log (id, event_id, attendee_id, channel, provider, status, delivery_status, error, recipient, subject, created_at)
+			`INSERT INTO notification_log (id, event_id, invitation_id, channel, provider, status, delivery_status, error, recipient, subject, created_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			logID, eventID, attendeeID, "email", "smtp", e.status, e.deliveryStatus, "", "test@example.com", "Test", now,
 		)
@@ -318,7 +320,7 @@ func TestTrackingService_GetEmailStats_SMSExcluded(t *testing.T) {
 	// Insert an email entry.
 	logID1 := uuid.Must(uuid.NewV7()).String()
 	_, err := db.ExecContext(ctx,
-		`INSERT INTO notification_log (id, event_id, attendee_id, channel, provider, status, delivery_status, error, recipient, subject, created_at)
+		`INSERT INTO notification_log (id, event_id, invitation_id, channel, provider, status, delivery_status, error, recipient, subject, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		logID1, eventID, attendeeID, "email", "smtp", "sent", "delivered", "", "test@example.com", "Test", now,
 	)
@@ -327,7 +329,7 @@ func TestTrackingService_GetEmailStats_SMSExcluded(t *testing.T) {
 	// Insert an SMS entry (should not be counted in email stats).
 	logID2 := uuid.Must(uuid.NewV7()).String()
 	_, err = db.ExecContext(ctx,
-		`INSERT INTO notification_log (id, event_id, attendee_id, channel, provider, status, delivery_status, error, recipient, subject, created_at)
+		`INSERT INTO notification_log (id, event_id, invitation_id, channel, provider, status, delivery_status, error, recipient, subject, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		logID2, eventID, attendeeID, "sms", "twilio", "sent", "delivered", "", "+14155551234", "", now,
 	)

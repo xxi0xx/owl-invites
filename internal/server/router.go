@@ -83,9 +83,11 @@ func (s *Server) routes() *chi.Mux {
 		// Series routes must be mounted before event routes so that
 		// /events/series is not captured by the event handler's /{eventId} pattern.
 		api.Mount("/events/series", s.seriesHandler.Routes())
-		api.Route("/events/{eventId}", func(eventRoutes chi.Router) {
-			eventRoutes.Mount("/", s.invitationHandler.OrganizerRoutes())
-		})
+		// Invitation organizer routers are deliberately mounted only at their
+		// concrete subresources. A router mounted at /events/{eventId} shadows
+		// the event handler's own GET /events/{eventId} route on chi.
+		api.Mount("/events/{eventId}/invitations", s.invitationHandler.OrganizerInvitationRoutes())
+		api.Mount("/events/{eventId}/open-enrollment", s.invitationHandler.OrganizerOpenEnrollmentRoutes())
 		api.Mount("/events", s.eventHandler.Routes())
 		api.Mount("/invitations", s.invitationHandler.PublicRoutes())
 
@@ -94,13 +96,8 @@ func (s *Server) routes() *chi.Mux {
 			qr.Mount("/", s.questionHandler.Routes())
 		})
 
-		// RSVP routes with moderate rate limiting (30/min) and honeypot on public submissions.
-		api.Route("/rsvp", func(rsvpR chi.Router) {
-			rsvpR.Use(security.RateLimitMiddleware(s.securityMw.RSVPRateLimiter))
-			rsvpR.Use(s.securityMw.Honeypot)
-			rsvpR.Mount("/", s.rsvpHandler.Routes())
-		})
-
+		// Legacy RSVP/contact-upsert routes are intentionally not mounted. Gate 2
+		// public mutations are invitation-session or open-enrollment operations.
 		api.Mount("/invite", s.inviteHandler.Routes())
 
 		// Serve uploaded files (public, for shared invite pages).
@@ -121,10 +118,8 @@ func (s *Server) routes() *chi.Mux {
 
 			http.ServeFile(w, r, filepath.Join(s.uploadsDir, name))
 		})
-		api.Mount("/messages", s.messageHandler.Routes())
 		api.Mount("/reminders", s.reminderHandler.Routes())
 		api.Mount("/feedback", s.feedbackHandler.Routes())
-		api.Mount("/comments", s.commentHandler.Routes())
 		api.Mount("/webhooks", s.webhookHandler.Routes())
 		api.Mount("/notifications", s.notifHandler.Routes())
 		api.Mount("/admin/users", s.userAdminHandler.UserRoutes())

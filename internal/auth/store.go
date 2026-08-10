@@ -430,14 +430,13 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 
 		// Child tables keyed directly by event_id.
 		eventChildren := map[string]*[]map[string]any{
-			"SELECT * FROM attendees WHERE event_id IN " + in:        &doc.Attendees,
-			"SELECT * FROM event_questions WHERE event_id IN " + in:  &doc.Questions,
-			"SELECT * FROM event_comments WHERE event_id IN " + in:   &doc.Comments,
-			"SELECT * FROM messages WHERE event_id IN " + in:         &doc.Messages,
-			"SELECT * FROM webhooks WHERE event_id IN " + in:         &doc.Webhooks,
-			"SELECT * FROM reminders WHERE event_id IN " + in:        &doc.Reminders,
-			"SELECT * FROM invite_cards WHERE event_id IN " + in:     &doc.InviteCards,
-			"SELECT * FROM notification_log WHERE event_id IN " + in: &doc.NotificationLog,
+			"SELECT * FROM invitations WHERE event_id IN " + in:         &doc.Invitations,
+			"SELECT * FROM event_questions WHERE event_id IN " + in:     &doc.Questions,
+			"SELECT * FROM invitation_messages WHERE event_id IN " + in: &doc.Messages,
+			"SELECT * FROM webhooks WHERE event_id IN " + in:            &doc.Webhooks,
+			"SELECT * FROM reminders WHERE event_id IN " + in:           &doc.Reminders,
+			"SELECT * FROM invite_cards WHERE event_id IN " + in:        &doc.InviteCards,
+			"SELECT * FROM notification_log WHERE event_id IN " + in:    &doc.NotificationLog,
 		}
 		for query, dest := range eventChildren {
 			rows, err := queryRows(ctx, s.db, query, args...)
@@ -445,6 +444,29 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 				return nil, fmt.Errorf("export event children: %w", err)
 			}
 			*dest = rows
+		}
+
+		invitationIDs, err := s.eventInvitationIDs(ctx, eventIDs)
+		if err != nil {
+			return nil, fmt.Errorf("list invitation ids: %w", err)
+		}
+		if len(invitationIDs) > 0 {
+			invIn, invArgs := inClause(invitationIDs)
+			if doc.Guests, err = queryRows(ctx, s.db, "SELECT * FROM guests WHERE invitation_id IN "+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.Responses, err = queryRows(ctx, s.db, "SELECT * FROM rsvp_responses WHERE invitation_id IN "+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.InvitationAnswers, err = queryRows(ctx, s.db, "SELECT * FROM invitation_answers WHERE invitation_id IN "+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.GuestResponses, err = queryRows(ctx, s.db, `SELECT gr.* FROM guest_responses gr JOIN guests g ON g.id = gr.guest_id WHERE g.invitation_id IN `+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.GuestAnswers, err = queryRows(ctx, s.db, `SELECT ga.* FROM guest_answers ga JOIN guests g ON g.id = ga.guest_id WHERE g.invitation_id IN `+invIn, invArgs...); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -471,26 +493,11 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		query string
 		args  []any
 	}{
-		// attendee_answers -> attendees -> events
-		{"DELETE FROM attendee_answers WHERE attendee_id IN (SELECT id FROM attendees WHERE event_id IN " + ev + ")", []any{organizerID}},
 		// webhook_deliveries -> webhooks -> events
 		{"DELETE FROM webhook_deliveries WHERE webhook_id IN (SELECT id FROM webhooks WHERE event_id IN " + ev + ")", []any{organizerID}},
-		// event_comments -> events
-		{"DELETE FROM event_comments WHERE event_id IN " + ev, []any{organizerID}},
-		// notification_log -> events
-		{"DELETE FROM notification_log WHERE event_id IN " + ev, []any{organizerID}},
-		// messages -> events
-		{"DELETE FROM messages WHERE event_id IN " + ev, []any{organizerID}},
-		// reminders -> events
-		{"DELETE FROM reminders WHERE event_id IN " + ev, []any{organizerID}},
-		// webhooks -> events
-		{"DELETE FROM webhooks WHERE event_id IN " + ev, []any{organizerID}},
-		// event_questions -> events
-		{"DELETE FROM event_questions WHERE event_id IN " + ev, []any{organizerID}},
-		// invite_cards -> events
-		{"DELETE FROM invite_cards WHERE event_id IN " + ev, []any{organizerID}},
-		// attendees -> events
-		{"DELETE FROM attendees WHERE event_id IN " + ev, []any{organizerID}},
+		// Answer FKs intentionally do not cascade through questions.
+		{"DELETE FROM invitation_answers WHERE invitation_id IN (SELECT id FROM invitations WHERE event_id IN " + ev + ")", []any{organizerID}},
+		{"DELETE FROM guest_answers WHERE guest_id IN (SELECT g.id FROM guests g JOIN invitations i ON i.id = g.invitation_id WHERE i.event_id IN " + ev + ")", []any{organizerID}},
 		// events themselves
 		{"DELETE FROM events WHERE id IN " + ev, []any{organizerID}},
 		// Preserve memberships granted by this user on events that remain by
@@ -533,6 +540,24 @@ func (s *Store) organizerEventIDs(ctx context.Context, organizerID string) ([]st
 	}
 	defer func() { _ = rows.Close() }()
 
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (s *Store) eventInvitationIDs(ctx context.Context, eventIDs []string) ([]string, error) {
+	in, args := inClause(eventIDs)
+	rows, err := s.db.QueryContext(ctx, "SELECT id FROM invitations WHERE event_id IN "+in, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
 	var ids []string
 	for rows.Next() {
 		var id string

@@ -151,6 +151,48 @@ func (s *Store) ListByEvent(ctx context.Context, eventID string) ([]*Household, 
 	return result, nil
 }
 
+func (s *Store) ListDeliveryTargets(ctx context.Context, eventID, recipientGroup string) ([]*Invitation, error) {
+	query := `SELECT ` + invitationColumns + ` FROM invitations i
+		WHERE i.event_id = ? AND i.revoked_at IS NULL AND i.contact_email IS NOT NULL`
+	args := []any{eventID}
+	if recipientGroup != "all" {
+		query += ` AND EXISTS (SELECT 1 FROM guests g
+			JOIN guest_responses gr ON gr.guest_id = g.id
+			WHERE g.invitation_id = i.id AND g.removed_at IS NULL AND gr.attendance = ?)`
+		args = append(args, recipientGroup)
+	}
+	query += ` ORDER BY i.created_at, i.id`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list invitation delivery targets: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make([]*Invitation, 0)
+	for rows.Next() {
+		inv, scanErr := scanInvitationRows(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, inv)
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) CreateMessage(ctx context.Context, message *InvitationMessage) error {
+	now := time.Now().UTC()
+	message.ID = uuid.Must(uuid.NewV7()).String()
+	message.CreatedAt = now
+	_, err := s.db.ExecContext(ctx, `INSERT INTO invitation_messages (
+		id, event_id, sender_user_id, recipient_group, subject, body, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`, message.ID, message.EventID,
+		message.SenderUserID, message.RecipientGroup, message.Subject, message.Body,
+		now.Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("create invitation message: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) Rotate(ctx context.Context, id, eventID string) (*Invitation, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

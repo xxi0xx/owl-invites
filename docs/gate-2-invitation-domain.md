@@ -36,14 +36,16 @@ every reconstructable private and open-enrollment capability even if the
 database is restored successfully. It must be backed up with the database and
 must not be logged or committed.
 
-Private capability material is reconstructed as a domain-separated HMAC over
+Household capability material is reconstructed as a domain-separated HMAC over
 an opaque random `access_id` and the invitation's `token_version`. Only those
-non-secret selectors are stored. A private URL carries the capability in the
+non-secret selectors are stored. `Invitation.source` records allocation
+provenance (`private` or `open`); it does not alter the resulting household's
+management rights. A household URL carries the capability in the
 fragment so it is not sent in the initial HTTP request or request logs. The SPA
 exchanges it once for a random limited invitation session, stores only the
 session hash server-side, and removes the fragment from browser history.
 
-Private capabilities are durable by design and carry no independent expiry.
+Household capabilities are durable by design and carry no independent expiry.
 Replaying one creates a distinct, time-limited session scoped to the same
 invitation; it cannot select or expand into another household. Organizer
 rotation or revocation is the expiry mechanism for the durable link. Browser
@@ -58,7 +60,12 @@ event, not an ordinary invitation operation.
 Recovery capabilities are independent random values, hashed at rest,
 short-lived, and atomically single-use. Consuming one creates an invitation
 session without rotating the primary capability. The public request response
-is identical whether zero, one, or several stored destinations match.
+is identical whether zero, one, or several stored destinations match. Lookup,
+token creation, and stored-destination delivery run outside the public response
+path, which has a fixed timing floor. Source, destination, and event budgets
+are counted and recorded under one database-serialized decision on both SQLite
+and PostgreSQL, so parallel transactions cannot race past the configured
+limits.
 
 All capability and household responses use `Cache-Control: no-store` and the
 application sends `Referrer-Policy: no-referrer`. Capability-bearing URLs use
@@ -70,8 +77,12 @@ cryptographically bound to that invitation session.
 Open links are enrollment capabilities, never household capabilities. There
 is at most one per event. Each successful enrollment creates a new isolated
 invitation and never searches, claims, merges, or mutates invitations by name,
-email, or phone. Open capacity counts allocated guest seats and is distinct
-from private invitation allocation. Gate 2 has no waitlist.
+email, or phone. The new invitation receives its own normal household
+`access_id`/`token_version` capability in the household HMAC domain, and that
+durable management link is delivered to its stored email destination. Losing
+the enrollment browser session therefore does not make the household
+unrecoverable. Open capacity counts allocated guest seats and is distinct from
+private invitation allocation. Gate 2 has no waitlist.
 
 ## Legacy migration mapping
 
@@ -128,6 +139,14 @@ and asserts the recovered guest response, question answer, notification owner,
 authentication/session rows, series link, and absence of every removed table
 and column.
 
+Migration 36 is an explicit one-way cutover. Its destructive deletes cannot be
+reversed from the Gate 2 schema, so a down migration is unsupported. Both the
+application migrator and the dialect-specific down scripts fail before any
+schema mutation if a target below version 36 is requested. Operator rollback
+is: restore the verified database and secret material captured before the
+upgrade, then run the pre-Gate-2 application against that restored state. A
+lossy recreation of empty legacy tables is not a rollback.
+
 The legacy `internal/rsvp`, `internal/message`, and `internal/comment`
 implementations and their notification templates are deleted, not merely
 unmounted. Legacy `/i/:token` and `/r/:token` frontend paths make no API call,
@@ -156,8 +175,11 @@ discard the path token from browser history, and direct the guest to recovery.
   capabilities return generic capability failures without disclosing which
   selector or invitation exists.
 - Recovery request responses are byte-for-byte equivalent for matching and
-  non-matching contacts. Rate-limit fingerprints are keyed HMAC values; raw
-  contacts and client identities are not persisted in the limiter table.
+  non-matching contacts and use the same public timing floor; deliberately slow
+  SMTP delivery does not extend the matching response. Rate-limit fingerprints
+  are keyed HMAC values; raw contacts and client identities are not persisted
+  in the limiter table. Delivery always uses the invitation's stored
+  destination, never caller-supplied contact text.
 - A stale response version receives `409 version_conflict`. Concurrent writes
   for one version admit exactly one winner.
 - Additional guests beyond the invitation allowance receive
@@ -180,9 +202,12 @@ resulting household and headcount.
 The same flow then enables a two-seat open enrollment link and submits it with
 the exact email already stored on the named invitation. It asserts that a new
 open-source invitation is created, the named household remains unchanged, the
-private allocation does not consume open capacity, and a later enrollment is
-rejected when those two seats are exhausted. Finally, a one-way organizer
-broadcast must deliver to both isolated invitations through Mailpit.
+private allocation does not consume open capacity, and a management email is
+sent for the new household. The enrollment browser is destroyed; a fresh
+browser exchanges the emailed household capability, sees only the open-origin
+invitation, and updates its response. A later enrollment is rejected when the
+two seats are exhausted. Finally, a one-way organizer broadcast must deliver
+to both isolated invitations through Mailpit.
 
 ## Gate 2 limitations and boundary
 

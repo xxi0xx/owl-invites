@@ -283,7 +283,7 @@ All API endpoints are under `/api/v1`. The server also provides:
 | POST | `/api/v1/events/:eventId/invitations/:invitationId/deliver` | Deliver to its stored email destination |
 | POST | `/api/v1/events/:eventId/invitations/:invitationId/rotate` | Rotate its capability and revoke existing sessions |
 | POST | `/api/v1/events/:eventId/invitations/:invitationId/revoke` | Revoke invitation and sessions |
-| POST | `/api/v1/invitations/exchange` | Exchange a private capability for an invitation session |
+| POST | `/api/v1/invitations/exchange` | Exchange a household capability for an invitation session |
 | GET | `/api/v1/invitations/session` | Read the current session's household only |
 | PUT | `/api/v1/invitations/session/response` | Atomically submit per-guest responses with optimistic versioning |
 | POST | `/api/v1/invitations/recovery/request` | Request generic, enumeration-resistant recovery |
@@ -480,6 +480,14 @@ GitHub Issues takes priority if both are set. Email is used as fallback when onl
 
 ### 💾 Backups
 
+Migration 36 is a one-way Gate 2 cutover. Before upgrading, create and verify a
+database backup and retain the matching `OWL_INVITES_SECRET_KEY` material. The
+migrator intentionally refuses every target below version 36 once the cutover
+has run; it will not recreate empty legacy tables and pretend deleted RSVP,
+comment, or message data was restored. If rollback is required, stop the Gate 2
+application and restore the complete pre-upgrade backup, then run the
+pre-Gate-2 application against that restored state.
+
 For SQLite, back up the database file:
 ```bash
 sqlite3 /data/openrsvp.db ".backup /backups/openrsvp-$(date +%Y%m%d).db"
@@ -494,7 +502,8 @@ docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
 
 - Gate 2 is not a production release. Migration 36 removes legacy attendee,
   RSVP-token, comments, and two-way message tables after migration 34 maps
-  recoverable response data. Take and verify a backup before testing upgrades.
+  recoverable response data. The cutover is irreversible in-place: take and
+  verify a backup before testing upgrades, and restore that backup for rollback.
 - Private invitation capabilities are durable by design: replay creates a new
   time-limited session for the same household until the organizer rotates or
   revokes the invitation. They do not carry an independent expiry timestamp.

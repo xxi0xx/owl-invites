@@ -194,3 +194,27 @@ func TestIdentityShadowRemovalRejectsOwnerParityMismatch(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM organizers").Scan(&organizers))
 	assert.Equal(t, 2, organizers, "guard must fail before removing compatibility data")
 }
+
+func TestMigration36RollbackIsRejectedBeforeSchemaMutation(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+
+	err := database.RunMigrationsTo(db, 35)
+	require.ErrorIs(t, err, database.ErrGate2RollbackUnsupported)
+	assert.Contains(t, err.Error(), "restore a verified pre-upgrade backup")
+
+	var version uint
+	var dirty bool
+	require.NoError(t, db.QueryRowContext(ctx,
+		"SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty))
+	assert.Equal(t, uint(36), version)
+	assert.False(t, dirty)
+
+	var invitationMessageCount int
+	require.NoError(t, db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM invitation_messages").Scan(&invitationMessageCount))
+	assert.Zero(t, invitationMessageCount)
+	assert.Error(t, db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM messages").Scan(new(int)),
+		"unsupported rollback must not recreate any legacy table")
+}

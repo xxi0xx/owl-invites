@@ -2,6 +2,7 @@ package database
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -13,6 +14,10 @@ import (
 
 //go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
 var migrationsFS embed.FS
+
+const irreversibleGate2Version uint = 36
+
+var ErrGate2RollbackUnsupported = errors.New("migration 36 is irreversible: restore a verified pre-upgrade backup to roll back Gate 2")
 
 // RunMigrations applies all pending database migrations.
 func RunMigrations(db DB) error {
@@ -46,6 +51,13 @@ func RunMigrationsTo(db DB, target uint) error {
 	m, err := newMigrator(db)
 	if err != nil {
 		return err
+	}
+	current, _, versionErr := m.Version()
+	if versionErr != nil && versionErr != migrate.ErrNilVersion {
+		return fmt.Errorf("read migration version: %w", versionErr)
+	}
+	if versionErr == nil && current >= irreversibleGate2Version && target < irreversibleGate2Version {
+		return ErrGate2RollbackUnsupported
 	}
 	if err := m.Migrate(target); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("migrate to %d: %w", target, err)

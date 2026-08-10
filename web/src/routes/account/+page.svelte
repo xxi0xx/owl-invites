@@ -85,7 +85,7 @@
 						<h2 class="text-lg font-display font-semibold text-neutral-900">Your data</h2>
 						<p class="mt-1 text-sm text-neutral-600">
 							Download a complete copy of your data as a JSON file. This includes all of your
-							events, guests, RSVPs, and messages.
+							events, invitation households, guest responses, and messages.
 						</p>
 					</div>
 					<div class="flex-shrink-0">
@@ -102,7 +102,7 @@
 					<div class="sm:pr-8">
 						<h2 class="text-lg font-display font-semibold text-error">Danger zone</h2>
 						<p class="mt-1 text-sm text-neutral-600">
-							Permanently delete your account along with all of your events, guests, RSVPs, and
+							Permanently delete your account along with all of your events, invitation households, guest responses, and
 							messages. This action cannot be undone.
 						</p>
 					</div>
@@ -122,7 +122,7 @@
 				</svg>
 				<span>
 					This permanently deletes your account and <strong>all</strong> of your events, guests,
-					RSVPs, and messages. This cannot be undone.
+					guest responses, and invitation messages. This cannot be undone.
 				</span>
 			</div>
 			<p class="text-sm text-neutral-600">

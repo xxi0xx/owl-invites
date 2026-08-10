@@ -41,12 +41,9 @@ extract_routes() {
   extract_routes event     /events
   extract_routes event     /events/series series_handler.go
   extract_routes question  /events/:p/questions
-  extract_routes rsvp      /rsvp
   extract_routes invite    /invite
-  extract_routes message   /messages
   extract_routes scheduler /reminders
   extract_routes feedback     /feedback
-  extract_routes comment      /comments
   extract_routes webhook      /webhooks
   extract_routes notification /notifications
   extract_routes suppression    /unsubscribe
@@ -63,6 +60,7 @@ get /events/:p/invitations/:p
 post /events/:p/invitations/:p/deliver
 post /events/:p/invitations/:p/rotate
 post /events/:p/invitations/:p/revoke
+post /events/:p/invitations/messages
 get /events/:p/open-enrollment
 put /events/:p/open-enrollment
 post /events/:p/open-enrollment/rotate

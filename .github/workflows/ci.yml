@@ -26,6 +26,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci
       - run: cd web && npm run check
+      - name: Verify frontend routes match the supported API contract
+        run: bash scripts/lint-api-routes.sh
       - run: cd web && npm run build
 
   backend-sqlite:
@@ -91,7 +93,7 @@ jobs:
         run: go test -race ./...
 
   e2e:
-    name: Browser magic-link flow (Mailpit)
+    name: Browser invitation flows (Chromium + Mailpit)
     runs-on: ubuntu-latest
     services:
       mailpit:
@@ -137,7 +139,7 @@ jobs:
           DB_DSN: ${{ runner.temp }}/owl-invites-e2e.db
           UPLOADS_DIR: ${{ runner.temp }}/owl-invites-uploads
           ALLOW_SIGNUPS: 'false'
-          OWL_INVITES_BOOTSTRAP_TOKEN: gate-1-browser-bootstrap
+          OWL_INVITES_BOOTSTRAP_TOKEN: gate-2-browser-bootstrap
           OWL_INVITES_SECRET_KEY: gate-2-browser-secret-key-at-least-32-bytes
           NOTIFICATION_EMAIL_PROVIDER: smtp
           SMTP_HOST: 127.0.0.1
@@ -155,7 +157,7 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:8080
           MAILPIT_URL: http://127.0.0.1:8025
-          OWL_INVITES_E2E_BOOTSTRAP_TOKEN: gate-1-browser-bootstrap
+          OWL_INVITES_E2E_BOOTSTRAP_TOKEN: gate-2-browser-bootstrap
         run: cd web && npm run test:e2e
       - name: Print application log on failure
         if: failure()

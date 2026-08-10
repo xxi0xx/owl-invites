@@ -213,7 +213,7 @@
 </script>
 
 <div class="mt-8">
-	<h2 class="text-lg font-display font-semibold text-neutral-900 mb-4">Custom RSVP Questions</h2>
+	<h2 class="text-lg font-display font-semibold text-neutral-900 mb-4">Invitation questions</h2>
 
 	{#if loading}
 		<div class="flex items-center justify-center py-8">

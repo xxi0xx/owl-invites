@@ -38,12 +38,11 @@
 		{ label: 'Archived', value: stats.events.archived, color: 'bg-warning' },
 	] : []);
 
-	const rsvpItems = $derived(stats ? [
-		{ label: 'Attending', value: stats.attendees.attending, color: 'bg-success' },
-		{ label: 'Maybe', value: stats.attendees.maybe, color: 'bg-warning' },
-		{ label: 'Declined', value: stats.attendees.declined, color: 'bg-error' },
-		{ label: 'Pending', value: stats.attendees.pending, color: 'bg-info' },
-		{ label: 'Waitlisted', value: stats.attendees.waitlisted, color: 'bg-secondary' },
+	const responseItems = $derived(stats ? [
+		{ label: 'Attending', value: stats.guests.attending, color: 'bg-success' },
+		{ label: 'Maybe', value: stats.guests.maybe, color: 'bg-warning' },
+		{ label: 'Declined', value: stats.guests.declined, color: 'bg-error' },
+		{ label: 'Pending', value: stats.guests.pending, color: 'bg-info' },
 	] : []);
 
 	const notifItems = $derived(stats ? [
@@ -57,8 +56,7 @@
 	] : []);
 
 	const featureItems = $derived(stats ? [
-		{ label: 'Waitlist', value: stats.features.waitlistEvents },
-		{ label: 'Comments', value: stats.features.commentsEnabledEvents },
+		{ label: 'Open enrollment', value: stats.features.openEnrollmentEvents },
 		{ label: 'Co-hosted', value: stats.features.cohostedEvents },
 		{ label: 'Custom Questions', value: stats.features.eventsWithQuestions },
 		{ label: 'Capacity Limit', value: stats.features.eventsWithCapacity },
@@ -91,16 +89,16 @@
 				</div>
 				<div class="bg-surface rounded-lg border border-neutral-200 p-5">
 					<p class="text-sm font-medium text-neutral-500">Total Guests</p>
-					<p class="text-3xl font-bold font-mono text-neutral-900 mt-1">{stats.attendees.totalHeadcount}</p>
-					<p class="text-xs text-neutral-400 mt-1">{stats.attendees.total} RSVPs + plus-ones</p>
+					<p class="text-3xl font-bold font-mono text-neutral-900 mt-1">{stats.guests.totalHeadcount}</p>
+					<p class="text-xs text-neutral-400 mt-1">{stats.guests.total} invitation guests</p>
 				</div>
 				<div class="bg-surface rounded-lg border border-neutral-200 p-5">
 					<p class="text-sm font-medium text-neutral-500">Organizers</p>
-					<p class="text-3xl font-bold font-mono text-neutral-900 mt-1">{stats.organizers.total}</p>
+					<p class="text-3xl font-bold font-mono text-neutral-900 mt-1">{stats.users.total}</p>
 				</div>
 				<div class="bg-surface rounded-lg border border-neutral-200 p-5">
 					<p class="text-sm font-medium text-neutral-500">Avg Guests / Event</p>
-					<p class="text-3xl font-bold font-mono text-neutral-900 mt-1">{stats.attendees.avgPerEvent.toFixed(1)}</p>
+					<p class="text-3xl font-bold font-mono text-neutral-900 mt-1">{stats.guests.avgPerEvent.toFixed(1)}</p>
 				</div>
 			</div>
 
@@ -128,22 +126,22 @@
 					</div>
 				</div>
 
-				<!-- RSVP Distribution -->
+				<!-- Guest response distribution -->
 				<div class="bg-surface rounded-lg border border-neutral-200 p-6">
-					<h2 class="text-sm font-semibold font-display text-neutral-700 mb-4">RSVP Distribution</h2>
+					<h2 class="text-sm font-semibold font-display text-neutral-700 mb-4">Guest response distribution</h2>
 					<div class="space-y-3">
-						{#each rsvpItems as item}
+						{#each responseItems as item}
 							<div class="flex items-center gap-3">
 								<span class="text-sm text-neutral-600 w-24 shrink-0">{item.label}</span>
 								<div class="flex-1 bg-neutral-100 rounded-full h-5 overflow-hidden">
 									<div
 										class="{item.color} h-full rounded-full transition-all"
-										style="width: {barWidth(item.value, stats.attendees.total)}"
+									style="width: {barWidth(item.value, stats.guests.total)}"
 									></div>
 								</div>
 								<span class="text-sm font-medium text-neutral-700 w-16 text-right">
 									{item.value}
-									<span class="text-neutral-400 text-xs">({pct(item.value, stats.attendees.total)}%)</span>
+								<span class="text-neutral-400 text-xs">({pct(item.value, stats.guests.total)}%)</span>
 								</span>
 							</div>
 						{/each}

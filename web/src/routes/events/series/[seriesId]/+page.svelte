@@ -3,7 +3,6 @@
 	import { page } from '$app/stores';
 	import { api } from '$lib/api/client';
 	import { toast } from '$lib/stores/toast';
-	import { smsEnabled, loadAppConfig } from '$lib/stores/config';
 	import { currentUser } from '$lib/stores/auth';
 	import { formatDateTime, isInPast } from '$lib/utils/dates';
 	import { getTimezoneOptions, getTimezoneLabel } from '$lib/utils/timezones';
@@ -36,11 +35,9 @@
 	let editTimezone = $state('');
 	let editEventTime = $state('');
 	let editDurationMinutes = $state('');
-	let editContactRequirement = $state('email');
 	let editShowHeadcount = $state(false);
 	let editShowGuestList = $state(false);
 	let editRsvpDeadlineOffsetHours = $state('');
-	let editMaxCapacity = $state('');
 	let editErrors: Record<string, string> = $state({});
 
 	const seriesId = $derived($page.params.seriesId);
@@ -56,21 +53,7 @@
 		|| '';
 	const tzOptions = getTimezoneOptions(defaultTz);
 
-	const contactRequirementOptions = [
-		{ value: 'email_or_phone', label: 'Email or Phone (at least one)' },
-		{ value: 'email', label: 'Email only' },
-		{ value: 'phone', label: 'Phone only' },
-		{ value: 'email_and_phone', label: 'Email and Phone (both required)' }
-	];
-
-	const filteredContactOptions = $derived(
-		$smsEnabled
-			? contactRequirementOptions
-			: contactRequirementOptions.filter(o => o.value !== 'phone')
-	);
-
 	onMount(async () => {
-		loadAppConfig();
 		try {
 			const result = await api.get<{ data: { series: EventSeries; occurrences: Event[] } }>(`/events/series/${seriesId}`);
 			series = result.data.series;
@@ -103,11 +86,9 @@
 		editTimezone = series.timezone;
 		editEventTime = series.eventTime;
 		editDurationMinutes = series.durationMinutes != null ? String(series.durationMinutes) : '';
-		editContactRequirement = series.contactRequirement;
 		editShowHeadcount = series.showHeadcount;
 		editShowGuestList = series.showGuestList;
 		editRsvpDeadlineOffsetHours = series.rsvpDeadlineOffsetHours != null ? String(series.rsvpDeadlineOffsetHours) : '';
-		editMaxCapacity = series.maxCapacity != null ? String(series.maxCapacity) : '';
 		editErrors = {};
 		editing = true;
 	}
@@ -125,10 +106,6 @@
 			const d = parseInt(editDurationMinutes);
 			if (isNaN(d) || d < 1) editErrors.durationMinutes = 'Must be at least 1';
 		}
-		if (editMaxCapacity) {
-			const parsed = Number(editMaxCapacity);
-			if (!Number.isInteger(parsed) || parsed < 1) editErrors.maxCapacity = 'Must be at least 1';
-		}
 		if (editRsvpDeadlineOffsetHours) {
 			const h = parseInt(editRsvpDeadlineOffsetHours);
 			if (isNaN(h) || h < 1) editErrors.rsvpDeadlineOffsetHours = 'Must be at least 1';
@@ -143,13 +120,11 @@
 				location: editLocation.trim(),
 				timezone: editTimezone,
 				eventTime: editEventTime,
-				contactRequirement: editContactRequirement,
 				showHeadcount: editShowHeadcount,
 				showGuestList: editShowGuestList
 			};
 			if (editDurationMinutes) body.durationMinutes = parseInt(editDurationMinutes);
 			if (editRsvpDeadlineOffsetHours) body.rsvpDeadlineOffsetHours = parseInt(editRsvpDeadlineOffsetHours);
-			if (editMaxCapacity) body.maxCapacity = parseInt(editMaxCapacity);
 
 			const result = await api.put<{ data: EventSeries }>(`/events/series/${seriesId}`, body);
 			series = result.data;
@@ -282,13 +257,6 @@
 						/>
 					</div>
 
-					<Select
-						label="RSVP Contact Requirement"
-						name="editContactRequirement"
-						bind:value={editContactRequirement}
-						options={filteredContactOptions}
-					/>
-
 					<fieldset class="pt-2">
 						<legend class="text-sm font-medium text-neutral-700 mb-3">Guest Visibility</legend>
 						<div class="space-y-2">
@@ -311,20 +279,13 @@
 						</div>
 					</fieldset>
 
-					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					<div>
 						<Input
-							label="RSVP Deadline Offset (hours)"
+							label="Response deadline offset (hours)"
 							name="editRsvpDeadlineOffsetHours"
 							type="number"
 							bind:value={editRsvpDeadlineOffsetHours}
 							error={editErrors.rsvpDeadlineOffsetHours || ''}
-						/>
-						<Input
-							label="Max Attendees"
-							name="editMaxCapacity"
-							type="number"
-							bind:value={editMaxCapacity}
-							error={editErrors.maxCapacity || ''}
 						/>
 					</div>
 
@@ -384,15 +345,9 @@
 								<dd class="font-medium text-neutral-900">{formatDateTime(series.recurrenceEnd, series.timezone)}</dd>
 							</div>
 						{/if}
-						{#if series.maxCapacity}
-							<div>
-								<dt class="text-neutral-500">Max Capacity</dt>
-								<dd class="font-medium text-neutral-900">{series.maxCapacity} per occurrence</dd>
-							</div>
-						{/if}
 						{#if series.rsvpDeadlineOffsetHours}
 							<div>
-								<dt class="text-neutral-500">RSVP Closes</dt>
+								<dt class="text-neutral-500">Responses close</dt>
 								<dd class="font-medium text-neutral-900">{series.rsvpDeadlineOffsetHours}h before event</dd>
 							</div>
 						{/if}

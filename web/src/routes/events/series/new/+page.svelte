@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { currentUser } from '$lib/stores/auth';
 	import { toast } from '$lib/stores/toast';
-	import { smsEnabled, loadAppConfig } from '$lib/stores/config';
 	import { datetimeLocalToUTC } from '$lib/utils/dates';
 	import { getTimezoneOptions, getTimezoneLabel } from '$lib/utils/timezones';
 	import type { EventSeries } from '$lib/types';
@@ -33,11 +31,9 @@
 	let endCondition = $state<'none' | 'count' | 'date'>('none');
 	let maxOccurrences = $state('');
 	let recurrenceEnd = $state('');
-	let contactRequirement = $state('email');
 	let showHeadcount = $state(false);
 	let showGuestList = $state(false);
 	let rsvpDeadlineOffsetHours = $state('');
-	let maxCapacity = $state('');
 	let retentionDays = $state('30');
 	let showRetention = $state(false);
 
@@ -52,25 +48,8 @@
 		{ value: 'monthly', label: 'Monthly' }
 	];
 
-	const contactRequirementOptions = [
-		{ value: 'email_or_phone', label: 'Email or Phone (at least one)' },
-		{ value: 'email', label: 'Email only' },
-		{ value: 'phone', label: 'Phone only' },
-		{ value: 'email_and_phone', label: 'Email and Phone (both required)' }
-	];
-
-	const filteredContactOptions = $derived(
-		$smsEnabled
-			? contactRequirementOptions
-			: contactRequirementOptions.filter(o => o.value !== 'phone')
-	);
-
 	// Today's date for the min attribute on the date picker
 	const today = new Date().toISOString().split('T')[0];
-
-	onMount(() => {
-		loadAppConfig();
-	});
 
 	function validate(): boolean {
 		errors = {};
@@ -89,12 +68,6 @@
 		if (durationMinutes) {
 			const d = parseInt(durationMinutes);
 			if (isNaN(d) || d < 1) errors.durationMinutes = 'Duration must be at least 1 minute';
-		}
-		if (maxCapacity) {
-			const parsed = Number(maxCapacity);
-			if (!Number.isInteger(parsed) || parsed < 1) {
-				errors.maxCapacity = 'Max attendees must be a whole number of at least 1';
-			}
 		}
 		if (rsvpDeadlineOffsetHours) {
 			const h = parseInt(rsvpDeadlineOffsetHours);
@@ -122,7 +95,6 @@
 				startDate,
 				eventTime,
 				recurrenceRule,
-				contactRequirement,
 				showHeadcount,
 				showGuestList,
 				retentionDays: parseInt(retentionDays)
@@ -131,7 +103,6 @@
 			if (endCondition === 'count' && maxOccurrences) body.maxOccurrences = parseInt(maxOccurrences);
 			if (endCondition === 'date' && recurrenceEnd) body.recurrenceEnd = datetimeLocalToUTC(recurrenceEnd + 'T23:59:59', timezone);
 			if (rsvpDeadlineOffsetHours) body.rsvpDeadlineOffsetHours = parseInt(rsvpDeadlineOffsetHours);
-			if (maxCapacity) body.maxCapacity = parseInt(maxCapacity);
 
 			const result = await api.post<{ data: EventSeries }>('/events/series', body);
 			toast.success('Series created successfully!');
@@ -325,14 +296,7 @@
 
 			<Card class="mb-6">
 				<div class="space-y-6">
-					<h2 class="text-lg font-semibold font-display text-neutral-900">RSVP Settings</h2>
-
-					<Select
-						label="RSVP Contact Requirement"
-						name="contactRequirement"
-						bind:value={contactRequirement}
-						options={filteredContactOptions}
-					/>
+					<h2 class="text-lg font-semibold font-display text-neutral-900">Invitation response settings</h2>
 
 					<fieldset class="pt-2">
 						<legend class="text-sm font-medium text-neutral-700 mb-3">Guest Visibility</legend>
@@ -357,24 +321,15 @@
 						</div>
 					</fieldset>
 
-					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					<div>
 						<Input
-							label="RSVP Deadline Offset (hours before event)"
+							label="Response deadline offset (hours before event)"
 							name="rsvpDeadlineOffsetHours"
 							type="number"
 							bind:value={rsvpDeadlineOffsetHours}
 							placeholder="e.g. 24"
-							helper="How many hours before each occurrence RSVPs close."
+							helper="How many hours before each occurrence invitation responses close."
 							error={errors.rsvpDeadlineOffsetHours || ''}
-						/>
-						<Input
-							label="Max Attendees (optional)"
-							name="maxCapacity"
-							type="number"
-							bind:value={maxCapacity}
-							placeholder="Leave empty for unlimited"
-							helper="Applied to each occurrence."
-							error={errors.maxCapacity || ''}
 						/>
 					</div>
 

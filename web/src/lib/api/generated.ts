@@ -86,14 +86,9 @@ export type Event = {
 	"timezone": string;
 	"retentionDays": number;
 	"status": "draft" | "published" | "cancelled" | "archived";
-	"shareToken": string;
-	"contactRequirement": "email" | "phone" | "email_or_phone" | "email_and_phone";
 	"showHeadcount": boolean;
 	"showGuestList": boolean;
 	"rsvpDeadline"?: string;
-	"maxCapacity"?: number;
-	"waitlistEnabled": boolean;
-	"commentsEnabled": boolean;
 	"seriesId"?: string;
 	"seriesIndex"?: number;
 	"seriesOverride": boolean;
@@ -165,6 +160,12 @@ export type CreateInvitationRequest = {
 	"send"?: boolean;
 };
 
+export type CreateInvitationResult = {
+	"invitation": Invitation;
+	"guests": Array<InvitationGuest>;
+	"accessUrl": string;
+};
+
 export type InvitationCapabilityRequest = {
 	"capability": string;
 };
@@ -188,6 +189,35 @@ export type OpenEnrollmentConfigRequest = {
 	"closesAt"?: string;
 	"maxPartySize": number;
 	"capacity"?: number;
+};
+
+export type OpenEnrollmentConfig = {
+	"id": string;
+	"eventId": string;
+	"enabled": boolean;
+	"opensAt"?: string;
+	"closesAt"?: string;
+	"maxPartySize": number;
+	"capacity"?: number;
+	"tokenVersion": number;
+	"revokedAt"?: string;
+	"createdAt": string;
+	"updatedAt": string;
+};
+
+export type OpenEnrollmentResult = {
+	"config": OpenEnrollmentConfig;
+	"accessUrl": string;
+};
+
+export type InvitationMessageRequest = {
+	"recipientGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"subject": string;
+	"body": string;
+};
+
+export type InvitationMessageResult = {
+	"sent": number;
 };
 
 export type OpenEnrollmentRequest = {
@@ -395,7 +425,9 @@ export interface Operations {
 	"eventId": string;
 };
 		requestBody: CreateInvitationRequest;
-		response: void;
+		response: {
+	"data": CreateInvitationResult;
+};
 	};
 	getInvitation: {
 		parameters: {
@@ -421,7 +453,9 @@ export interface Operations {
 	"invitationId": string;
 };
 		requestBody: void;
-		response: void;
+		response: {
+	"data": CreateInvitationResult;
+};
 	};
 	revokeInvitation: {
 		parameters: {
@@ -433,26 +467,41 @@ export interface Operations {
 };
 		response: void;
 	};
+	messageInvitationHouseholds: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: InvitationMessageRequest;
+		response: {
+	"data": InvitationMessageResult;
+};
+	};
 	getOpenEnrollment: {
 		parameters: {
 	"eventId": string;
 };
 		requestBody: void;
-		response: void;
+		response: {
+	"data": OpenEnrollmentResult | null;
+};
 	};
 	configureOpenEnrollment: {
 		parameters: {
 	"eventId": string;
 };
 		requestBody: OpenEnrollmentConfigRequest;
-		response: void;
+		response: {
+	"data": OpenEnrollmentResult;
+};
 	};
 	rotateOpenEnrollmentCapability: {
 		parameters: {
 	"eventId": string;
 };
 		requestBody: void;
-		response: void;
+		response: {
+	"data": OpenEnrollmentResult;
+};
 	};
 	exchangeInvitationCapability: {
 		parameters: void;
@@ -524,6 +573,7 @@ export const operationDefinitions = {
 	deliverInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/deliver","pathParams":["eventId","invitationId"],"queryParams":[]},
 	rotateInvitationCapability: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/rotate","pathParams":["eventId","invitationId"],"queryParams":[]},
 	revokeInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/revoke","pathParams":["eventId","invitationId"],"queryParams":[]},
+	messageInvitationHouseholds: {"method":"POST","path":"/events/{eventId}/invitations/messages","pathParams":["eventId"],"queryParams":[]},
 	getOpenEnrollment: {"method":"GET","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
 	configureOpenEnrollment: {"method":"PUT","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
 	rotateOpenEnrollmentCapability: {"method":"POST","path":"/events/{eventId}/open-enrollment/rotate","pathParams":["eventId"],"queryParams":[]},

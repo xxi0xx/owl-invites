@@ -3,10 +3,9 @@
 A self-hosted, privacy-first alternative to Evite. Create beautiful event invitations, manage RSVPs, and communicate with guests — all without ads or data tracking. Perfect for birthday parties, gatherings, and celebrations.
 
 > [!WARNING]
-> **Owl Invites is in staged redevelopment. Gate 2 is a development milestone,
-> not a production release.** Gate 2 replaces the legacy attendee/RSVP-token
-> model with isolated invitation households and removes the legacy mutation
-> code and schema. No Owl Invites production
+> **Owl Invites is in staged redevelopment. Gate 3 is a development milestone,
+> not a production release.** Gate 2's isolated invitation-household model is
+> retained; Gate 3 adds release and recovery controls. No stable Owl Invites
 > container image has been published; do not deploy an upstream OpenRSVP image
 > or an unpinned `:latest` tag as a substitute for this branch.
 
@@ -32,9 +31,9 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 
 ## 🚀 Quick Start
 
-### Gate 2 local container build
+### Gate 3 local review build
 
-Run this from a checkout of `codex/gate-2-invitation-domain`:
+Run this from a checkout of `codex/gate-3-production-readiness`:
 
 ```bash
 cp .env.example .env
@@ -61,7 +60,7 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 
 ### Prerequisites
 
-- Go 1.25+ (the `toolchain go1.26.3` directive auto-fetches the patched compiler when `GOTOOLCHAIN=auto`, the default)
+- Go 1.25+ (the `toolchain go1.26.5` directive auto-fetches the patched compiler when `GOTOOLCHAIN=auto`, the default)
 - Node.js 22+
 - Make
 
@@ -93,7 +92,7 @@ make build
 # Outputs: bin/openrsvp and bin/owl-invites
 ```
 
-The generated Gate 2 API client is checked during `npm run check`. Browser
+The generated API client is checked during `npm run check`. Browser
 acceptance tests expect a running application and Mailpit:
 
 ```bash
@@ -105,7 +104,9 @@ npm run test:e2e
 
 The full test suite runs against both SQLite and PostgreSQL in CI. Migrations live in per-dialect directories, `internal/database/migrations/sqlite` and `internal/database/migrations/postgres`, because some schema changes (for example CHECK-constraint edits) differ between the two engines. When you add a migration, add it to both directories.
 
-See [Gate 2 invitation domain](docs/gate-2-invitation-domain.md) for the
+See [Gate 3 production readiness](docs/gate-3-production-readiness.md) for
+release/deployment/recovery architecture and operator runbooks. See
+[Gate 2 invitation domain](docs/gate-2-invitation-domain.md) for the
 authoritative domain, capability lifecycle, migration mapping, feature
 disposition, authorization matrix, and known limitations. Gate 1 background
 remains in [Gate 1 foundation](docs/gate-1-foundation.md).
@@ -118,6 +119,8 @@ openrsvp/
 ├── internal/
 │   ├── config/                    # Environment-based configuration
 │   ├── database/                  # DB interface, SQLite/Postgres drivers, migrations
+│   ├── backup/                    # Verified SQLite recovery bundles + recovery drills
+│   ├── buildinfo/                 # Shared binary/image source identity
 │   ├── auth/                      # Magic link authentication + middleware
 │   ├── event/                     # Event CRUD
 │   ├── invitation/                # Household, guest, response, capability, recovery, enrollment
@@ -131,7 +134,8 @@ openrsvp/
 ├── web/                           # SvelteKit frontend (Tailwind CSS)
 ├── Dockerfile                     # Multi-stage build
 ├── docker-compose.yml             # SQLite mode
-└── docker-compose.postgres.yml    # PostgreSQL override
+├── docker-compose.postgres.yml    # PostgreSQL development override
+└── docker-compose.production.yml  # Digest-only hardened deployment example
 ```
 
 ## ⚙️ Configuration
@@ -156,7 +160,8 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 | `ALLOW_SIGNUPS` | `false` | Allows unsolicited organizer account creation. Admin invitations, co-host invitations, and acceptance of issued invitations remain available when this is off |
 | `OWL_INVITES_BOOTSTRAP_TOKEN` | _(empty)_ | One-time, environment-only authorization for creating the first persistent administrator. Required for fresh Internet-reachable installations; never stored in the database |
 | `OWL_INVITES_ACCOUNT_INVITE_EXPIRY` | `72h` | Lifetime of administrator-issued account invitation capabilities |
-| `OWL_INVITES_SECRET_KEY` | _(required)_ | Stable HMAC key of at least 32 bytes for invitation and open-enrollment capabilities. **Critical restore material:** back it up with the database; loss or global rotation invalidates all capability links |
+| `OWL_INVITES_SECRET_KEY` | _(one source required)_ | Stable HMAC key of at least 32 bytes for invitation and open-enrollment capabilities. Critical restore material; protect separately from ordinary backups |
+| `OWL_INVITES_SECRET_KEY_FILE` | _(one source required)_ | Read the same key from a file such as `/run/secrets/owl_invites_secret_key`; mutually exclusive with `OWL_INVITES_SECRET_KEY` |
 | `OWL_INVITES_INVITATION_SESSION_EXPIRY` | `720h` | Lifetime of a random, hashed-at-rest browser invitation session |
 | `OWL_INVITES_INVITATION_RECOVERY_EXPIRY` | `15m` | Lifetime of a one-time, hashed-at-rest invitation recovery capability |
 
@@ -384,54 +389,28 @@ Non-secret instance settings (instance name, default timezone, allow-signups, su
 ### 🐳 Docker
 
 > [!CAUTION]
-> Gate 2 has no published Owl Invites production image and is not approved for
-> production deployment. The example below builds a review image from the
-> current checkout; it does not pull an image from GHCR.
+> No stable Owl Invites GHCR image exists during Gate 3. Do not deploy upstream
+> OpenRSVP or any `:latest`, major-only, or major/minor tag as a substitute.
 
-Build a local, explicitly named image from this branch:
-
-```bash
-docker build --tag owl-invites:gate-2-review .
-```
-
-For an isolated review deployment, use that exact local tag:
-
-```yaml
-# docker-compose.yml
-services:
-  openrsvp:
-    image: owl-invites:gate-2-review
-    restart: unless-stopped
-    expose:
-      - 8080
-    environment:
-      ENV: production
-      BASE_URL: https://rsvp.yourdomain.com
-      OWL_INVITES_BOOTSTRAP_TOKEN: replace-with-a-long-random-secret
-      DB_DSN: /data/openrsvp.db
-      UPLOADS_DIR: /data/uploads
-      SMTP_HOST: smtp.yourdomain.com
-      SMTP_PORT: 587
-      SMTP_USERNAME: noreply@yourdomain.com
-      SMTP_PASSWORD: yourpassword
-      SMTP_FROM: noreply@yourdomain.com
-    volumes:
-      - ./data:/data
-```
+For review, build the exact checkout with source identity embedded:
 
 ```bash
-docker compose up -d
+test -z "$(git status --porcelain)" # or explicitly use BUILD_STATE=dirty
+commit=$(git rev-parse HEAD)
+docker build --tag owl-invites:gate-3-review \
+  --build-arg VERSION=dev \
+  --build-arg COMMIT="$commit" \
+  --build-arg BUILD_STATE=clean \
+  --build-arg SOURCE_URL=https://github.com/xxi0xx/owl-invites .
+docker run --rm owl-invites:gate-3-review owl-invites version --json
 ```
 
-**Required variables for production:**
-
-| Variable | Why it's required |
-|----------|-------------------|
-| `ENV=production` | Switches to JSON structured logging |
-| `BASE_URL` | Used in magic links and invite emails — must be the public HTTPS URL |
-| `SMTP_*` | Email delivery is required for magic link login |
-
-> **Data persistence:** all state lives under `/data` (SQLite DB + uploads), while `OWL_INVITES_SECRET_KEY` is required restore material. Back up both; losing the key invalidates every private and open capability after a database restore.
+The hardened [production Compose example](docker-compose.production.yml) is
+digest-only, uses a secret file, persists `/data`, expects external SMTP and a
+reverse proxy, and publishes no host port. Follow the authoritative
+[production deployment runbook](docs/operations/production-deployment.md).
+Until a verified release workflow publishes and reports an image digest, there
+is no production image value to put into that example.
 
 ### Reverse Proxy (Nginx)
 
@@ -480,27 +459,30 @@ GitHub Issues takes priority if both are set. Email is used as fallback when onl
 
 ### 💾 Backups
 
-Migration 36 is a one-way Gate 2 cutover. Before upgrading, create and verify a
-database backup and retain the matching `OWL_INVITES_SECRET_KEY` material. The
-migrator intentionally refuses every target below version 36 once the cutover
-has run; it will not recreate empty legacy tables and pretend deleted RSVP,
-comment, or message data was restored. If rollback is required, stop the Gate 2
-application and restore the complete pre-upgrade backup, then run the
-pre-Gate-2 application against that restored state.
+A valid recovery point is database + uploads + separately protected matching
+`OWL_INVITES_SECRET_KEY`. A database-only copy is incomplete when uploads
+exist, and a backup is not trusted until an automated or operator restore drill
+has succeeded.
 
-For SQLite, back up the database file:
+Use the supported SQLite commands:
+
 ```bash
-sqlite3 /data/openrsvp.db ".backup /backups/openrsvp-$(date +%Y%m%d).db"
+owl-invites backup sqlite --output /backups/owl-invites-2026-08-10T120000Z
+owl-invites backup verify /backups/owl-invites-2026-08-10T120000Z
 ```
 
-For PostgreSQL, use `pg_dump`:
-```bash
-docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
-```
+Use custom-format `pg_dump`/`pg_restore` for PostgreSQL. The complete commands,
+manifest/fingerprint rules, clean-target restore procedure, upload handling,
+wrong-secret behavior, and disaster decisions are in the authoritative
+[backup/restore runbook](docs/operations/backup-restore.md).
+
+Migration 36 is intentionally irreversible. Rollback across the Gate 2 cutover
+means restoring a verified complete pre-upgrade recovery point and running the
+older application; no down command recreates empty legacy structures.
 
 ### ⚠️ Known limitations
 
-- Gate 2 is not a production release. Migration 36 removes legacy attendee,
+- Gate 3 is not a stable production release. Migration 36 removes legacy attendee,
   RSVP-token, comments, and two-way message tables after migration 34 maps
   recoverable response data. The cutover is irreversible in-place: take and
   verify a backup before testing upgrades, and restore that backup for rollback.
@@ -518,7 +500,8 @@ docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
   is reported as a nonfatal `delivery.failed` result and logged/tracked; it does
   not undo creation, hide the open-enrollment browser session, or consume
   capacity through an automatic retry. Organizers can retry the explicit
-  delivery endpoint. Gate 2 intentionally has no queue/outbox subsystem.
+  delivery endpoint. Gate 3 intentionally adds no queue/outbox subsystem;
+  retries remain bounded and in-process.
 - Legacy CSV attendee import/export, guestbook/comments, waitlist behavior, and
   guest-to-organizer message threads are disabled and have no mounted API.
 - Invite-card customization remains an organizer tool but is not yet included

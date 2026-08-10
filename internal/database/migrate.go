@@ -4,6 +4,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
@@ -18,6 +20,92 @@ var migrationsFS embed.FS
 const irreversibleGate2Version uint = 36
 
 var ErrGate2RollbackUnsupported = errors.New("migration 36 is irreversible: restore a verified pre-upgrade backup to roll back Gate 2")
+
+// MigrationStatus is the operator-visible database schema state.
+type MigrationStatus struct {
+	Current uint
+	Latest  uint
+	Dirty   bool
+	Pending bool
+}
+
+// MigrationResult describes the schema transition performed by MigrateUp.
+type MigrationResult struct {
+	Before MigrationStatus
+	After  MigrationStatus
+}
+
+// ReadMigrationStatus returns the installed and available schema versions.
+func ReadMigrationStatus(db DB) (MigrationStatus, error) {
+	latest, err := LatestMigrationVersion(db.Dialect())
+	if err != nil {
+		return MigrationStatus{}, err
+	}
+	m, err := newMigrator(db)
+	if err != nil {
+		return MigrationStatus{}, err
+	}
+	current, dirty, err := m.Version()
+	if err != nil {
+		if !errors.Is(err, migrate.ErrNilVersion) {
+			return MigrationStatus{}, fmt.Errorf("read migration version: %w", err)
+		}
+		current = 0
+		dirty = false
+	}
+	return MigrationStatus{
+		Current: current,
+		Latest:  latest,
+		Dirty:   dirty,
+		Pending: current < latest || dirty,
+	}, nil
+}
+
+// LatestMigrationVersion returns the highest embedded up migration.
+func LatestMigrationVersion(dialect string) (uint, error) {
+	entries, err := migrationsFS.ReadDir("migrations/" + dialect)
+	if err != nil {
+		return 0, fmt.Errorf("read %s migrations: %w", dialect, err)
+	}
+	var latest uint64
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") {
+			continue
+		}
+		prefix, _, ok := strings.Cut(name, "_")
+		if !ok {
+			return 0, fmt.Errorf("invalid migration filename: %s", name)
+		}
+		version, parseErr := strconv.ParseUint(prefix, 10, 64)
+		if parseErr != nil {
+			return 0, fmt.Errorf("invalid migration filename %s: %w", name, parseErr)
+		}
+		if version > latest {
+			latest = version
+		}
+	}
+	if latest == 0 {
+		return 0, fmt.Errorf("no up migrations found for dialect %s", dialect)
+	}
+	return uint(latest), nil
+}
+
+// MigrateUp applies pending migrations and returns the before/after state.
+func MigrateUp(db DB) (MigrationResult, error) {
+	before, err := ReadMigrationStatus(db)
+	if err != nil {
+		return MigrationResult{}, err
+	}
+	if err := RunMigrations(db); err != nil {
+		return MigrationResult{Before: before}, err
+	}
+	after, err := ReadMigrationStatus(db)
+	if err != nil {
+		return MigrationResult{Before: before}, err
+	}
+	return MigrationResult{Before: before, After: after}, nil
+}
 
 // RunMigrations applies all pending database migrations.
 func RunMigrations(db DB) error {

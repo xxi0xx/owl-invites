@@ -27,8 +27,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if handled, err := buildinfo.RunVersionCommand(args, stdout); handled {
 		return err
 	}
+	if len(args) >= 1 && args[0] == "migrate" {
+		return runMigrate(args[1:], stdout)
+	}
 	if len(args) < 2 || args[0] != "admin" || args[1] != "promote" {
-		return errors.New("usage: owl-invites <version [--json] | admin promote --email user@example.com>")
+		return errors.New("usage: owl-invites <version [--json] | migrate <status|version|up> | admin promote --email user@example.com>")
 	}
 	flags := flag.NewFlagSet("admin promote", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -59,5 +62,49 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(stdout, "promoted %s to instance administrator\n", user.Email)
+	return nil
+}
+
+func runMigrate(args []string, stdout io.Writer) error {
+	if len(args) != 1 || (args[0] != "status" && args[0] != "version" && args[0] != "up") {
+		return errors.New("usage: owl-invites migrate <status|version|up>")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+	db, err := database.New(cfg)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	switch args[0] {
+	case "status":
+		status, statusErr := database.ReadMigrationStatus(db)
+		if statusErr != nil {
+			return fmt.Errorf("read migration status: %w", statusErr)
+		}
+		_, err = fmt.Fprintf(stdout, "current=%d\nlatest=%d\ndirty=%t\npending=%t\n", status.Current, status.Latest, status.Dirty, status.Pending)
+		return err
+	case "version":
+		status, statusErr := database.ReadMigrationStatus(db)
+		if statusErr != nil {
+			return fmt.Errorf("read migration version: %w", statusErr)
+		}
+		_, err = fmt.Fprintf(stdout, "%d\n", status.Current)
+		return err
+	case "up":
+		result, migrateErr := database.MigrateUp(db)
+		if migrateErr != nil {
+			return fmt.Errorf("apply migrations: %w", migrateErr)
+		}
+		if result.Before.Current == result.After.Current && !result.Before.Dirty {
+			_, err = fmt.Fprintf(stdout, "schema already at version %d\n", result.After.Current)
+			return err
+		}
+		_, err = fmt.Fprintf(stdout, "migrated schema from %d to %d\n", result.Before.Current, result.After.Current)
+		return err
+	}
 	return nil
 }

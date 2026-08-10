@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestMigrateCommandsSQLite(t *testing.T) {
+	unsetTestEnv(t, "OWL_INVITES_SECRET_KEY_FILE")
 	t.Setenv("ENV", "development")
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("DB_DSN", filepath.Join(t.TempDir(), "operator-migrate.db"))
@@ -48,4 +50,47 @@ func TestMigrateCommandRejectsUnsupportedActionBeforeConfiguration(t *testing.T)
 	if err == nil || !strings.Contains(err.Error(), "status|version|up") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestSecretFingerprintCommandDoesNotPrintSecret(t *testing.T) {
+	const secret = "operator-fingerprint-secret-material-32-bytes"
+	unsetTestEnv(t, "OWL_INVITES_SECRET_KEY_FILE")
+	t.Setenv("ENV", "development")
+	t.Setenv("OWL_INVITES_SECRET_KEY", secret)
+
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"secret", "fingerprint"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(stdout.String(), "oi-secret-v1:") {
+		t.Fatalf("unexpected fingerprint output: %q", stdout.String())
+	}
+	if strings.Contains(stdout.String(), secret) {
+		t.Fatal("fingerprint output leaked the secret")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	t.Setenv("OWL_INVITES_SECRET_KEY_FILE", filepath.Join(t.TempDir(), "unused"))
+	if err := run([]string{"secret", "fingerprint"}, &stdout, &stderr); err == nil {
+		t.Fatal("expected both-set configuration to fail")
+	}
+	if strings.Contains(stdout.String()+stderr.String(), secret) {
+		t.Fatal("failed configuration leaked the secret")
+	}
+}
+
+func unsetTestEnv(t *testing.T, name string) {
+	t.Helper()
+	value, existed := os.LookupEnv(name)
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if existed {
+			_ = os.Setenv(name, value)
+		} else {
+			_ = os.Unsetenv(name)
+		}
+	})
 }

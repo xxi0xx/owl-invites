@@ -128,9 +128,9 @@ func Load() (*Config, error) {
 	if err != nil || invitationRecoveryExpiry <= 0 {
 		return nil, fmt.Errorf("invalid OWL_INVITES_INVITATION_RECOVERY_EXPIRY: must be a positive duration")
 	}
-	invitationSecretKey := os.Getenv("OWL_INVITES_SECRET_KEY")
-	if len(invitationSecretKey) < 32 {
-		return nil, fmt.Errorf("OWL_INVITES_SECRET_KEY is required and must contain at least 32 bytes")
+	invitationSecretKey, err := loadInvitationSecret(env)
+	if err != nil {
+		return nil, err
 	}
 
 	baseURL := getEnv("BASE_URL", "http://localhost:8080")
@@ -250,6 +250,54 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func loadInvitationSecret(environment string) (string, error) {
+	direct, directSet := os.LookupEnv("OWL_INVITES_SECRET_KEY")
+	filePath, fileSet := os.LookupEnv("OWL_INVITES_SECRET_KEY_FILE")
+	if directSet && fileSet {
+		return "", fmt.Errorf("exactly one of OWL_INVITES_SECRET_KEY and OWL_INVITES_SECRET_KEY_FILE may be set")
+	}
+
+	secret := direct
+	if fileSet {
+		if filePath == "" {
+			return "", fmt.Errorf("OWL_INVITES_SECRET_KEY_FILE must name a readable file")
+		}
+		contents, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", fmt.Errorf("read OWL_INVITES_SECRET_KEY_FILE: %w", err)
+		}
+		secret = trimOneTrailingLineEnding(string(contents))
+	}
+	if (!directSet && !fileSet) || len(secret) < 32 {
+		return "", fmt.Errorf("OWL_INVITES_SECRET_KEY is required and must contain at least 32 bytes")
+	}
+	if environment == "production" && isObviousSecretPlaceholder(secret) {
+		return "", fmt.Errorf("OWL_INVITES_SECRET_KEY must not use a placeholder value in production")
+	}
+	return secret, nil
+}
+
+func trimOneTrailingLineEnding(value string) string {
+	if strings.HasSuffix(value, "\r\n") {
+		return strings.TrimSuffix(value, "\r\n")
+	}
+	return strings.TrimSuffix(value, "\n")
+}
+
+func isObviousSecretPlaceholder(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	for _, marker := range []string{
+		"change-me", "changeme", "replace-me", "replace_me", "replace-this",
+		"replace_this", "your-secret", "your_secret", "example", "placeholder",
+		"development-only", "test-only",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // ApplyInstanceOverrides overlays non-secret instance settings loaded from the

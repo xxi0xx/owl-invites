@@ -14,6 +14,7 @@ import (
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/instanceconfig"
+	"github.com/yannkr/openrsvp/internal/secretkey"
 )
 
 func main() {
@@ -30,8 +31,16 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) >= 1 && args[0] == "migrate" {
 		return runMigrate(args[1:], stdout)
 	}
+	if len(args) == 2 && args[0] == "secret" && args[1] == "fingerprint" {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load configuration: %w", err)
+		}
+		_, err = fmt.Fprintln(stdout, secretkey.Fingerprint(cfg.InvitationSecretKey))
+		return err
+	}
 	if len(args) < 2 || args[0] != "admin" || args[1] != "promote" {
-		return errors.New("usage: owl-invites <version [--json] | migrate <status|version|up> | admin promote --email user@example.com>")
+		return errors.New("usage: owl-invites <version [--json] | secret fingerprint | migrate <status|version|up> | admin promote --email user@example.com>")
 	}
 	flags := flag.NewFlagSet("admin promote", flag.ContinueOnError)
 	flags.SetOutput(stderr)

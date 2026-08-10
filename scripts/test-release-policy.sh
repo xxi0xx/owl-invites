@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 validator="$repo_root/scripts/validate-release-ref.sh"
+review_validator="$repo_root/scripts/validate-review-ref.sh"
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 
@@ -34,5 +35,16 @@ if (cd "$fixture" && bash "$validator" v1.2.3 "$review_commit" refs/remotes/orig
   echo "non-main release commit was accepted" >&2
   exit 1
 fi
+
+review_tag="review-sha-$review_commit"
+git -C "$fixture" tag "$review_tag" "$review_commit"
+(cd "$fixture" && bash "$review_validator" "$review_tag" "$review_commit" >/dev/null)
+
+for invalid in "review-sha-$main_commit" "review-sha-${review_commit}x" "review-$review_commit" v1.2.3; do
+  if (cd "$fixture" && bash "$review_validator" "$invalid" "$review_commit" >/dev/null 2>&1); then
+    echo "invalid review tag was accepted: $invalid" >&2
+    exit 1
+  fi
+done
 
 echo "release policy tests passed"

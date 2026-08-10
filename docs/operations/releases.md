@@ -47,6 +47,13 @@ is blocked on the same authoritative product gate, and emits only the full-SHA
 alias. It cannot mint a stable version tag. Leaving the dispatch option off
 runs the multi-architecture release build without publishing anything.
 
+Before this workflow is present on the default branch, GitHub cannot dispatch
+it manually. The bootstrap review path is an exact annotated or lightweight
+tag named `review-sha-<full-commit>` on that same commit. The validator rejects
+any name/target mismatch; the workflow still emits only the SHA image alias.
+This review tag is not a semantic-version release tag and creates no GitHub
+Release.
+
 ## Identity, SBOM, and provenance
 
 The release tag and full commit are injected into both binaries through

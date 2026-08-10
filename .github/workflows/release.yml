@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'review-sha-*']
   workflow_dispatch:
     inputs:
       publish_review_artifact:
@@ -21,23 +21,29 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       commit: ${{ steps.release.outputs.commit }}
+      stable: ${{ steps.release.outputs.stable }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Fetch authoritative main
-        if: github.event_name == 'push'
+        if: startsWith(github.ref, 'refs/tags/v')
         run: git fetch --no-tags origin main:refs/remotes/origin/main
       - name: Validate release or review source
         id: release
         env:
-          IS_STABLE_RELEASE: ${{ github.event_name == 'push' }}
+          IS_TAG_EVENT: ${{ github.event_name == 'push' }}
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          if [[ "$IS_STABLE_RELEASE" == "true" ]]; then
+          stable=false
+          if [[ "$IS_TAG_EVENT" == "true" && "$RELEASE_TAG" == review-sha-* ]]; then
+            bash scripts/validate-review-ref.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+            version=dev
+          elif [[ "$IS_TAG_EVENT" == "true" ]]; then
             bash scripts/validate-release-ref.sh "$RELEASE_TAG" "$RELEASE_COMMIT" refs/remotes/origin/main
             version="$RELEASE_TAG"
+            stable=true
           else
             case "$GITHUB_REF" in
               refs/heads/main|refs/heads/codex/*) ;;
@@ -48,6 +54,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$RELEASE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
 
   product-verification:
     name: Authoritative product gate
@@ -81,7 +88,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=${{ needs.validate.outputs.version }},enable=${{ github.event_name == 'push' }}
+            type=raw,value=${{ needs.validate.outputs.version }},enable=${{ needs.validate.outputs.stable == 'true' }}
             type=raw,value=sha-${{ needs.validate.outputs.commit }}
       - name: Build and publish multi-architecture image
         id: image

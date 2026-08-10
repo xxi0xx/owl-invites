@@ -3,26 +3,25 @@
 A self-hosted, privacy-first alternative to Evite. Create beautiful event invitations, manage RSVPs, and communicate with guests — all without ads or data tracking. Perfect for birthday parties, gatherings, and celebrations.
 
 > [!WARNING]
-> **Owl Invites is in staged redevelopment. Gate 1 is a development milestone,
-> not a production release.** Legacy RSVP mutation is intentionally disabled
-> pending the Gate 2 invitation-domain redesign. No Owl Invites production
+> **Owl Invites is in staged redevelopment. Gate 2 is a development milestone,
+> not a production release.** Gate 2 replaces the legacy attendee/RSVP-token
+> model with isolated invitation households and removes the legacy mutation
+> code and schema. No Owl Invites production
 > container image has been published; do not deploy an upstream OpenRSVP image
 > or an unpinned `:latest` tag as a substitute for this branch.
 
 ## ✨ Features
 
-- 🎨 **Beautiful Invitation Templates** — 5 customizable themes (Balloon Party, Confetti, Unicorn Magic, Superhero, Garden Picnic) with custom colors, fonts, and text
 - 🔐 **Passwordless Auth** — Magic link sign-in, no passwords to manage
-- 📋 **Easy RSVPs** — Guests respond with one click, no account needed. Track dietary needs and plus-ones
-- 📬 **Notifications** — Pluggable email (SMTP, SendGrid, SES) and SMS (Twilio, Vonage, SNS) providers
-- 💬 **Messaging** — Two-way communication between organizers and attendees
-- ⏰ **Scheduled Reminders** — Automatic event reminders to guests
-- 📝 **Guestbook** — Attendees can leave comments on event pages, delete their own, with organizer moderation
-- 📥 **CSV Import** — Bulk import guest lists from CSV files with validation and duplicate detection
-- 🔗 **Webhooks** — Real-time HTTP callbacks for RSVP and event lifecycle events with HMAC signing
+- 🏠 **Private Invitation Households** — Every invitation is an isolated capability and response boundary; matching names or contact details never merge households
+- 👥 **Per-Person Responses** — Assigned and allowed additional guests respond independently without creating organizer accounts
+- 🌐 **Open Enrollment** — Optional, time-windowed enrollment capabilities create new isolated households with atomic capacity enforcement
+- ❓ **Scoped Questions** — Invitation- and guest-level questions and answers use explicit ownership
+- 📬 **Email Delivery** — Private invitations, recovery links, reminders, cancellation notices, and one-way organizer broadcasts use stored invitation destinations
+- ⏰ **Scheduled Reminders** — Automatic event reminders target invitation households by response group
+- 🔗 **Webhooks** — Event lifecycle callbacks with HMAC signing
 - 📊 **Email Tracking** — Delivery status, open tracking, and per-event email statistics; provider bounce/complaint parsers remain dormant pending authenticated inbound webhook support
 - ✉️ **Unsubscribe & Suppression** — One-click unsubscribe footer on reminder/message emails, with a suppression list that skips opted-out addresses
-- 🗣️ **Guest Feedback** — A "Report a problem" widget on public RSVP pages lets guests flag issues without logging in
 - 🧭 **Secure Setup Wizard** — One-time, environment-token-authorized creation of the first administrator and instance settings
 - 📦 **Data Export & Account Deletion** — Organizers can export all their data and permanently delete their account from an Account settings page
 - 🛡️ **Privacy by Design** — Data auto-deletes after a configurable retention period (default 30 days post-event)
@@ -33,9 +32,9 @@ A self-hosted, privacy-first alternative to Evite. Create beautiful event invita
 
 ## 🚀 Quick Start
 
-### Gate 1 local container build
+### Gate 2 local container build
 
-Run this from a checkout of `codex/gate-1-foundation`:
+Run this from a checkout of `codex/gate-2-invitation-domain`:
 
 ```bash
 cp .env.example .env
@@ -94,8 +93,8 @@ make build
 # Outputs: bin/openrsvp and bin/owl-invites
 ```
 
-The generated Gate 1 API client is checked during `npm run check`. The real
-browser magic-link acceptance test expects a running application and Mailpit:
+The generated Gate 2 API client is checked during `npm run check`. Browser
+acceptance tests expect a running application and Mailpit:
 
 ```bash
 cd web
@@ -106,9 +105,10 @@ npm run test:e2e
 
 The full test suite runs against both SQLite and PostgreSQL in CI. Migrations live in per-dialect directories, `internal/database/migrations/sqlite` and `internal/database/migrations/postgres`, because some schema changes (for example CHECK-constraint edits) differ between the two engines. When you add a migration, add it to both directories.
 
-See [Gate 1 foundation](docs/gate-1-foundation.md) for the resulting schema,
-authorization model, API contract, migration behavior, and security review
-boundary.
+See [Gate 2 invitation domain](docs/gate-2-invitation-domain.md) for the
+authoritative domain, capability lifecycle, migration mapping, feature
+disposition, authorization matrix, and known limitations. Gate 1 background
+remains in [Gate 1 foundation](docs/gate-1-foundation.md).
 
 ### 📁 Project Structure
 
@@ -120,10 +120,8 @@ openrsvp/
 │   ├── database/                  # DB interface, SQLite/Postgres drivers, migrations
 │   ├── auth/                      # Magic link authentication + middleware
 │   ├── event/                     # Event CRUD
-│   ├── rsvp/                      # RSVP system
+│   ├── invitation/                # Household, guest, response, capability, recovery, enrollment
 │   ├── invite/                    # Invite card templates + customization
-│   ├── message/                   # Organizer-attendee messaging
-│   ├── comment/                   # Event page guestbook/comments
 │   ├── webhook/                   # Webhook endpoints + SSRF-safe dispatcher
 │   ├── notification/              # Email/SMS provider interface + implementations
 │   ├── scheduler/                 # Background jobs (reminders, cleanup)
@@ -275,16 +273,35 @@ All API endpoints are under `/api/v1`. The server also provides:
 | POST | `/api/v1/events/:id/duplicate` | Duplicate event |
 | DELETE | `/api/v1/events/:id` | Delete event |
 
-### 📋 RSVPs
+### 🏠 Invitations and guest responses
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/rsvp/public/:shareToken` | Disabled during the secure invitation-model transition (`410 Gone`) |
-| GET | `/api/v1/rsvp/public/token/:rsvpToken` | Get RSVP (public) |
-| PUT/PATCH | `/api/v1/rsvp/public/token/:rsvpToken` | Disabled during the secure invitation-model transition (`410 Gone`) |
-| GET | `/api/v1/rsvp/event/:eventId` | List RSVPs |
-| GET | `/api/v1/rsvp/event/:eventId/stats` | RSVP stats |
-| DELETE | `/api/v1/rsvp/event/:eventId/:attendeeId` | Remove attendee |
+| GET | `/api/v1/events/:eventId/invitations` | List invitation households (event member) |
+| POST | `/api/v1/events/:eventId/invitations` | Create a private household invitation (event member) |
+| GET | `/api/v1/events/:eventId/invitations/:invitationId` | Get one household (event member) |
+| POST | `/api/v1/events/:eventId/invitations/:invitationId/deliver` | Deliver to its stored email destination |
+| POST | `/api/v1/events/:eventId/invitations/:invitationId/rotate` | Rotate its capability and revoke existing sessions |
+| POST | `/api/v1/events/:eventId/invitations/:invitationId/revoke` | Revoke invitation and sessions |
+| POST | `/api/v1/invitations/exchange` | Exchange a private capability for an invitation session |
+| GET | `/api/v1/invitations/session` | Read the current session's household only |
+| PUT | `/api/v1/invitations/session/response` | Atomically submit per-guest responses with optimistic versioning |
+| POST | `/api/v1/invitations/recovery/request` | Request generic, enumeration-resistant recovery |
+| POST | `/api/v1/invitations/recovery/exchange` | Exchange a short-lived, single-use recovery capability |
+
+Private and open capabilities are carried in URL fragments and removed from
+browser history before API navigation. Raw capabilities are not stored in the
+database. Invitation-session mutations require a session-bound CSRF token.
+
+### 🌐 Open enrollment
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/events/:eventId/open-enrollment` | Read configuration (event member) |
+| PUT | `/api/v1/events/:eventId/open-enrollment` | Configure enabled state, window, party size, and capacity |
+| POST | `/api/v1/events/:eventId/open-enrollment/rotate` | Invalidate the previous enrollment URL |
+| POST | `/api/v1/invitations/open/inspect` | Read public enrollment constraints with a valid capability |
+| POST | `/api/v1/invitations/open/enroll` | Create a new isolated household atomically |
 
 ### 🎨 Invite Cards
 
@@ -295,14 +312,13 @@ All API endpoints are under `/api/v1`. The server also provides:
 | PUT | `/api/v1/invite/event/:eventId` | Save invite card |
 | GET | `/api/v1/invite/event/:eventId/preview` | Preview invite |
 
-### 💬 Messages
+### 💬 Invitation messages
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/messages/event/:eventId` | Send message (organizer) |
-| GET | `/api/v1/messages/event/:eventId` | List messages (organizer) |
-| POST | `/api/v1/messages/attendee/:rsvpToken` | Send message (attendee) |
-| GET | `/api/v1/messages/attendee/:rsvpToken` | List messages (attendee) |
+| POST | `/api/v1/events/:eventId/invitations/messages` | Send a one-way organizer broadcast to invitation households selected by response group |
+
+Guest-to-organizer threads are deferred. There is no RSVP-token message API.
 
 ### ⏰ Reminders
 
@@ -312,16 +328,6 @@ All API endpoints are under `/api/v1`. The server also provides:
 | GET | `/api/v1/reminders/event/:eventId` | List reminders |
 | PUT | `/api/v1/reminders/:reminderId` | Update reminder |
 | DELETE | `/api/v1/reminders/:reminderId` | Cancel reminder |
-
-### 📝 Comments / Guestbook
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/comments/public/:shareToken` | List public comments (paginated) |
-| POST | `/api/v1/comments/public/:shareToken` | Post comment (requires `X-RSVP-Token` header) |
-| DELETE | `/api/v1/comments/public/:commentId` | Delete own comment (requires `X-RSVP-Token`) |
-| GET | `/api/v1/comments/event/:eventId` | List all comments (organizer) |
-| DELETE | `/api/v1/comments/event/:eventId/:commentId` | Delete any comment (organizer) |
 
 ### 🔗 Webhooks
 
@@ -335,14 +341,6 @@ All API endpoints are under `/api/v1`. The server also provides:
 | POST | `/api/v1/webhooks/:webhookId/rotate-secret` | Rotate signing secret |
 | GET | `/api/v1/webhooks/:webhookId/deliveries` | Delivery history |
 | POST | `/api/v1/webhooks/:webhookId/test` | Send test webhook |
-
-### 📥 CSV Import
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/rsvp/import/template` | Download CSV template |
-| POST | `/api/v1/rsvp/event/:eventId/import/preview` | Preview CSV upload |
-| POST | `/api/v1/rsvp/event/:eventId/import` | Execute confirmed import |
 
 ### 🔑 Instance Admin
 
@@ -386,14 +384,14 @@ Non-secret instance settings (instance name, default timezone, allow-signups, su
 ### 🐳 Docker
 
 > [!CAUTION]
-> Gate 1 has no published Owl Invites production image and is not approved for
+> Gate 2 has no published Owl Invites production image and is not approved for
 > production deployment. The example below builds a review image from the
 > current checkout; it does not pull an image from GHCR.
 
 Build a local, explicitly named image from this branch:
 
 ```bash
-docker build --tag owl-invites:gate-1-review .
+docker build --tag owl-invites:gate-2-review .
 ```
 
 For an isolated review deployment, use that exact local tag:
@@ -402,7 +400,7 @@ For an isolated review deployment, use that exact local tag:
 # docker-compose.yml
 services:
   openrsvp:
-    image: owl-invites:gate-1-review
+    image: owl-invites:gate-2-review
     restart: unless-stopped
     expose:
       - 8080
@@ -433,7 +431,7 @@ docker compose up -d
 | `BASE_URL` | Used in magic links and invite emails — must be the public HTTPS URL |
 | `SMTP_*` | Email delivery is required for magic link login |
 
-> **Data persistence:** all state lives under `/data` (SQLite DB + uploads). Mount a volume there — losing it means losing all events and RSVPs.
+> **Data persistence:** all state lives under `/data` (SQLite DB + uploads), while `OWL_INVITES_SECRET_KEY` is required restore material. Back up both; losing the key invalidates every private and open capability after a database restore.
 
 ### Reverse Proxy (Nginx)
 
@@ -493,6 +491,23 @@ docker compose exec postgres pg_dump -U openrsvp openrsvp > backup.sql
 ```
 
 ### ⚠️ Known limitations
+
+- Gate 2 is not a production release. Migration 36 removes legacy attendee,
+  RSVP-token, comments, and two-way message tables after migration 34 maps
+  recoverable response data. Take and verify a backup before testing upgrades.
+- Private invitation capabilities are durable by design: replay creates a new
+  time-limited session for the same household until the organizer rotates or
+  revokes the invitation. They do not carry an independent expiry timestamp.
+- SMS providers remain in the inherited notification subsystem, but Gate 2
+  invitation delivery and recovery are email-only.
+- Legacy CSV attendee import/export, guestbook/comments, waitlist behavior, and
+  guest-to-organizer message threads are disabled and have no mounted API.
+- Invite-card customization remains an organizer tool but is not yet included
+  in the Gate 2 guest household payload; guest presentation integration is
+  deferred rather than exposed through a legacy public share token.
+- Webhook delivery in Gate 2 supports `event.published` and `event.cancelled`.
+  Stored subscriptions for retired RSVP/comment event names are inert and are
+  filtered out when edited.
 
 **Unsigned inbound provider webhook routes are not mounted.** SendGrid/SES
 parser and support code may remain in the repository, but Owl Invites does not

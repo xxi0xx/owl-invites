@@ -1,8 +1,11 @@
 # Gate 2: invitation domain and RSVP security boundary
 
-Status: implementation branch. Migration 34 establishes the invitation
-security boundary and performs the one-way legacy RSVP mapping. Migration 35
-removes the Gate 1 identity and event-ownership shadows after enforcing parity.
+Status: implementation branch, not a production release. Migration 34
+establishes the invitation security boundary and performs the one-way legacy
+RSVP mapping. Migration 35 removes the Gate 1 identity and event-ownership
+shadows after enforcing parity. Migration 36 removes the obsolete attendee,
+RSVP-token, guestbook, and two-way-message schema after preserving migrated
+invitation children and notification ownership.
 
 ## Domain invariants
 
@@ -21,6 +24,10 @@ removes the Gate 1 identity and event-ownership shadows after enforcing parity.
   attending guests.
 - A response is updated with optimistic version checks. Allowance and open
   capacity checks are performed while holding the relevant database row lock.
+- Headcount is the number of active guest rows, whether assigned or additional.
+  An invitation is a household boundary, not a person count. Open-enrollment
+  capacity counts only seats allocated by that open-enrollment configuration;
+  private household allocation is deliberately independent.
 
 ## Capability design
 
@@ -36,6 +43,12 @@ fragment so it is not sent in the initial HTTP request or request logs. The SPA
 exchanges it once for a random limited invitation session, stores only the
 session hash server-side, and removes the fragment from browser history.
 
+Private capabilities are durable by design and carry no independent expiry.
+Replaying one creates a distinct, time-limited session scoped to the same
+invitation; it cannot select or expand into another household. Organizer
+rotation or revocation is the expiry mechanism for the durable link. Browser
+sessions do expire and are rejected after their configured expiry.
+
 Per-invitation rotation increments `token_version` and revokes existing
 invitation sessions. Revocation blocks both capabilities and sessions. Those
 operations are separate from global secret rotation: changing the global key
@@ -46,6 +59,13 @@ Recovery capabilities are independent random values, hashed at rest,
 short-lived, and atomically single-use. Consuming one creates an invitation
 session without rotating the primary capability. The public request response
 is identical whether zero, one, or several stored destinations match.
+
+All capability and household responses use `Cache-Control: no-store` and the
+application sends `Referrer-Policy: no-referrer`. Capability-bearing URLs use
+fragments, so the capability is not sent in the initial HTTP request. Handler
+logs exclude raw capabilities and recovery contacts. Invitation cookies are
+HTTP-only and SameSite Strict; invitation response mutation uses a CSRF token
+cryptographically bound to that invitation session.
 
 Open links are enrollment capabilities, never household capabilities. There
 is at most one per event. Each successful enrollment creates a new isolated
@@ -77,11 +97,12 @@ contact fields.
 | Reminders and cancellation notices | Adapt delivery to invitation destinations and invitation links. |
 | Notification log | Adapt nullable ownership from attendee to invitation. |
 | Comments / guestbook | Disable and defer; do not preserve RSVP-token access. |
-| CSV import/export | Replace attendee import/export with invitation/guest semantics. |
+| CSV import/export | Disable legacy attendee import/export; defer a capability-safe invitation/guest importer. |
 | Statistics | Adapt headcount and response totals to guests and guest responses. |
+| Webhooks | Retain `event.published` and `event.cancelled`; legacy RSVP/comment subscriptions are inert and rejected by Gate 2 create/update validation. |
 | Event series | Preserve event generation; do not copy household invitations between occurrences. |
 | Retention / cleanup | Rely on event cascades for the invitation domain; adapt owner lookup to memberships. |
-| Invitation-card rendering | Preserve event card design but expose it only through a valid invitation session or open-enrollment capability. |
+| Invitation-card rendering | Retain organizer customization, but defer guest payload integration; never expose it through a legacy public share token. |
 | Waitlist | Delete from active RSVP behavior; no Gate 2 replacement. |
 | Legacy public share/contact upsert | Delete. |
 
@@ -96,10 +117,21 @@ parity hold. Its pre-upgrade test runs unchanged on SQLite and PostgreSQL and
 also verifies preservation of authentication rows, series links, and migrated
 invitation children.
 
-`attendees`, `attendee_answers`, `plus_ones`, `rsvp_token`, and `share_token`
-are removed only after the one-way migration assertions pass and all mounted
-routes use invitation authorization. Dormant legacy handlers are not a
-supported compatibility API.
+Migration 36 removes `attendees`, `attendee_answers`, `event_comments`, and
+legacy `messages`; the event `share_token`, contact requirement, capacity,
+waitlist, and comments columns; and the series contact/capacity columns. It
+also replaces `notification_log.attendee_id` with invitation ownership and
+adds `invitation_messages`. The SQLite migration temporarily copies and
+restores every Gate 2 child table affected by table rebuilding. The migration
+test starts from the legacy schema, runs unchanged on SQLite and PostgreSQL,
+and asserts the recovered guest response, question answer, notification owner,
+authentication/session rows, series link, and absence of every removed table
+and column.
+
+The legacy `internal/rsvp`, `internal/message`, and `internal/comment`
+implementations and their notification templates are deleted, not merely
+unmounted. Legacy `/i/:token` and `/r/:token` frontend paths make no API call,
+discard the path token from browser history, and direct the guest to recovery.
 
 ## Authorization matrix
 
@@ -107,7 +139,7 @@ supported compatibility API.
 | --- | --- | --- | --- | --- |
 | Anonymous | none | none | generic request only | valid enabled capability only |
 | Unrelated organizer | none | none | generic request only | same as anonymous |
-| Event co-host | manage event invitations | organizer view for that event | no recovery disclosure | configure only if explicitly permitted by event management policy |
+| Event co-host | manage event invitations | organizer view for that event | no recovery disclosure | configure through explicit event membership |
 | Event owner | full event invitation management | organizer view for that event | no recovery disclosure | configure |
 | Instance admin without membership | no implicit event access | none | no disclosure | no implicit configuration access |
 | Instance admin with membership | rights of explicit membership | organizer view for that event | no disclosure | rights of explicit membership |
@@ -117,3 +149,45 @@ supported compatibility API.
 | Invitation session | its invitation only | its invitation only | not applicable | none |
 | Recovery capability | exchange once for its invitation | no direct read | atomic single use | none |
 | Open enrollment capability | no event administration | cannot read any existing invitation | none | create a new isolated invitation only |
+
+## Error and concurrency behavior
+
+- Malformed, tampered, expired-session, rotated, revoked, and wrong-domain
+  capabilities return generic capability failures without disclosing which
+  selector or invitation exists.
+- Recovery request responses are byte-for-byte equivalent for matching and
+  non-matching contacts. Rate-limit fingerprints are keyed HMAC values; raw
+  contacts and client identities are not persisted in the limiter table.
+- A stale response version receives `409 version_conflict`. Concurrent writes
+  for one version admit exactly one winner.
+- Additional guests beyond the invitation allowance receive
+  `409 allowance_exceeded`.
+- Open enrollment outside its enabled time window is unavailable without
+  revealing configuration details. Concurrent enrollment at the last seat
+  admits exactly one household and returns `409 capacity_reached` to the other.
+
+## Browser acceptance boundary
+
+The Chromium/Mailpit acceptance flow starts from a fresh database and verifies
+setup plus organizer magic-link login before exercising Gate 2. It creates an
+event with invitation- and guest-scoped questions, delivers a named household
+invitation through SMTP, exchanges the fragment capability for a limited
+session, removes the raw capability from browser history, records per-guest
+attendance and one allowed additional guest, persists both answer scopes, and
+revisits the session to update the response. The organizer view must show the
+resulting household and headcount.
+
+The same flow then enables a two-seat open enrollment link and submits it with
+the exact email already stored on the named invitation. It asserts that a new
+open-source invitation is created, the named household remains unchanged, the
+private allocation does not consume open capacity, and a later enrollment is
+rejected when those two seats are exhausted. Finally, a one-way organizer
+broadcast must deliver to both isolated invitations through Mailpit.
+
+## Gate 2 limitations and boundary
+
+Gate 2 does not provide a waitlist, contact-based identity/claiming, CSV
+invitation import/export, guestbook/comments, guest-to-organizer message
+threads, SMS invitation delivery, or guest invite-card rendering. These are
+explicitly disabled or deferred and must not be restored using legacy RSVP or
+share tokens. No Gate 3 schema or domain behavior is part of this branch.

@@ -1,11 +1,14 @@
 package notification
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -21,6 +24,22 @@ type captureProvider struct {
 	last      *Message
 	messageID string
 }
+
+type failingProvider struct {
+	attempts int
+	err      error
+}
+
+func (p *failingProvider) Name() string     { return "failing" }
+func (p *failingProvider) Channel() Channel { return ChannelEmail }
+func (p *failingProvider) Send(context.Context, *Message) (*SendResult, error) {
+	p.attempts++
+	return nil, p.err
+}
+func (p *failingProvider) SendBatch(_ context.Context, msgs []*Message) ([]*SendResult, []error) {
+	return make([]*SendResult, len(msgs)), make([]error, len(msgs))
+}
+func (p *failingProvider) HealthCheck(context.Context) error { return nil }
 
 func (p *captureProvider) Name() string     { return "capture" }
 func (p *captureProvider) Channel() Channel { return ChannelEmail }
@@ -109,6 +128,54 @@ func TestService_OpenPixel_EmbeddedWhenEnabled(t *testing.T) {
 	err = db.QueryRowContext(ctx, "SELECT id FROM notification_log WHERE event_id = ?", eventID).Scan(&logID)
 	require.NoError(t, err)
 	assert.Contains(t, prov.last.Body, "/track/open/"+logID)
+}
+
+func TestServiceFailureRetriesAreBoundedAndTracked(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx := context.Background()
+	eventID := uuid.Must(uuid.NewV7()).String()
+	invitationID := uuid.Must(uuid.NewV7()).String()
+	createParentRecordsForNotification(t, ctx, db, eventID, invitationID)
+
+	provider := &failingProvider{err: errors.New("deliberate SMTP outage")}
+	var logs bytes.Buffer
+	service := NewService(newTestRegistry(provider), db, zerolog.New(&logs))
+	var delays []time.Duration
+	service.retryWait = func(_ context.Context, delay time.Duration) error {
+		delays = append(delays, delay)
+		return nil
+	}
+
+	err := service.Send(ctx, eventID, invitationID, ChannelEmail, &Message{To: "restore@example.com", Subject: "Retry", Body: "test"})
+	require.Error(t, err)
+	assert.Equal(t, maxSendAttempts, provider.attempts)
+	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second}, delays)
+	assert.Contains(t, logs.String(), "notification send failed, retrying")
+
+	entries, err := service.GetLogsByEvent(ctx, eventID)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "failed", entries[0].Status)
+	assert.Contains(t, entries[0].Error, "deliberate SMTP outage")
+}
+
+func TestServiceCancellationStopsRetries(t *testing.T) {
+	db := testutil.NewTestDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	eventID := uuid.Must(uuid.NewV7()).String()
+	invitationID := uuid.Must(uuid.NewV7()).String()
+	createParentRecordsForNotification(t, ctx, db, eventID, invitationID)
+	provider := &failingProvider{err: errors.New("provider unavailable")}
+	service := NewService(newTestRegistry(provider), db, zerolog.Nop())
+	service.retryWait = func(context.Context, time.Duration) error {
+		t.Fatal("retry wait must not run after cancellation")
+		return nil
+	}
+	cancel()
+
+	err := service.Send(ctx, eventID, invitationID, ChannelEmail, &Message{To: "cancelled@example.com", Body: "test"})
+	require.Error(t, err)
+	assert.Equal(t, 1, provider.attempts)
 }
 
 func TestService_OpenPixel_AbsentWhenDisabled(t *testing.T) {

@@ -195,8 +195,8 @@ test('Gate 2 private and open invitation flows stay isolated through Mailpit and
 	await expect(namedHousehold).toContainText('Alex: attending');
 	const openHousehold = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Open household' }) });
 	await expect(openHousehold).toContainText(HOUSEHOLD_EMAIL);
-	await expect(openHousehold).toContainText('Dana: pending');
-	await expect(openHousehold).toContainText('Ellis: pending');
+	await expect(openHousehold).toContainText('Dana: attending');
+	await expect(openHousehold).toContainText('Ellis: declined');
 
 	const capacityContext = await browser.newContext();
 	const capacityPage = await capacityContext.newPage();

@@ -1,0 +1,59 @@
+# Gate 3 production deployment example. Supply the exact digest printed by the
+# verified release workflow; tags (including semantic-version tags) are not the
+# canonical deployment identity. No stable Owl Invites image is published yet.
+services:
+  openrsvp:
+    image: ghcr.io/xxi0xx/owl-invites@sha256:${OWL_INVITES_IMAGE_DIGEST:?OWL_INVITES_IMAGE_DIGEST is required}
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    volumes:
+      - openrsvp-data:/data
+    secrets:
+      - source: owl_invites_secret_key
+        target: owl_invites_secret_key
+    environment:
+      ENV: production
+      PORT: "8080"
+      BASE_URL: ${BASE_URL:?BASE_URL is required}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?TRUSTED_PROXIES is required behind the reverse proxy}
+      DB_DRIVER: sqlite
+      DB_DSN: /data/openrsvp.db
+      UPLOADS_DIR: /data/uploads
+      OWL_INVITES_SECRET_KEY_FILE: /run/secrets/owl_invites_secret_key
+      ALLOW_SIGNUPS: "false"
+      NOTIFICATION_EMAIL_PROVIDER: smtp
+      SMTP_HOST: ${SMTP_HOST:?external SMTP_HOST is required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:?SMTP_FROM is required}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    pids_limit: 256
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 35s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  owl_invites_secret_key:
+    file: ${OWL_INVITES_SECRET_KEY_HOST_FILE:?OWL_INVITES_SECRET_KEY_HOST_FILE is required}
+
+volumes:
+  openrsvp-data:

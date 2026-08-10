@@ -2,7 +2,6 @@ package question
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -15,9 +14,6 @@ const maxQuestionsPerEvent = 10
 // maxOptionsPerQuestion is the maximum number of options per select/checkbox question.
 const maxOptionsPerQuestion = 20
 
-// maxTextAnswerLength is the maximum length for a text answer.
-const maxTextAnswerLength = 1000
-
 // maxLabelLength is the maximum length for a question label.
 const maxLabelLength = 500
 
@@ -29,6 +25,11 @@ var validTypes = map[string]bool{
 	"text":     true,
 	"select":   true,
 	"checkbox": true,
+}
+
+var validScopes = map[string]bool{
+	"invitation": true,
+	"guest":      true,
 }
 
 // Service contains the business logic for event questions.
@@ -91,6 +92,13 @@ func (s *Service) Create(ctx context.Context, eventID string, req CreateQuestion
 	if req.Required != nil {
 		required = *req.Required
 	}
+	scope := req.Scope
+	if scope == "" {
+		scope = "guest"
+	}
+	if !validScopes[scope] {
+		return nil, fmt.Errorf("invalid question scope: must be invitation or guest")
+	}
 
 	sortOrder := count // default to appending at the end
 	if req.SortOrder != nil {
@@ -104,6 +112,7 @@ func (s *Service) Create(ctx context.Context, eventID string, req CreateQuestion
 		Type:      req.Type,
 		Options:   options,
 		Required:  required,
+		Scope:     scope,
 		SortOrder: sortOrder,
 	}
 
@@ -166,6 +175,12 @@ func (s *Service) Update(ctx context.Context, questionID string, req UpdateQuest
 	if req.Required != nil {
 		q.Required = *req.Required
 	}
+	if req.Scope != nil {
+		if !validScopes[*req.Scope] {
+			return nil, fmt.Errorf("invalid question scope: must be invitation or guest")
+		}
+		q.Scope = *req.Scope
+	}
 
 	if req.SortOrder != nil {
 		q.SortOrder = *req.SortOrder
@@ -205,102 +220,4 @@ func (s *Service) ListByEvent(ctx context.Context, eventID string) ([]*Question,
 // Reorder updates the sort order of questions for an event.
 func (s *Service) Reorder(ctx context.Context, eventID string, orderedIDs []string) error {
 	return s.store.UpdateSortOrders(ctx, eventID, orderedIDs)
-}
-
-// ValidateAndSaveAnswers validates answers against the event's questions and
-// persists them.
-func (s *Service) ValidateAndSaveAnswers(ctx context.Context, attendeeID, eventID string, answers map[string]string) error {
-	questions, err := s.store.FindByEventID(ctx, eventID)
-	if err != nil {
-		return fmt.Errorf("get questions: %w", err)
-	}
-
-	// Build a lookup map of question ID -> question.
-	questionMap := make(map[string]*Question, len(questions))
-	for _, q := range questions {
-		questionMap[q.ID] = q
-	}
-
-	// Check required questions are answered.
-	for _, q := range questions {
-		if q.Required {
-			answer, provided := answers[q.ID]
-			if !provided || strings.TrimSpace(answer) == "" {
-				return fmt.Errorf("answer required for question: %s", q.Label)
-			}
-		}
-	}
-
-	// Validate and save each answer.
-	for questionID, answer := range answers {
-		q, exists := questionMap[questionID]
-		if !exists {
-			// Skip answers for unknown questions (they may have been deleted).
-			continue
-		}
-
-		switch q.Type {
-		case "text":
-			if len(answer) > maxTextAnswerLength {
-				return fmt.Errorf("answer for %q exceeds maximum length of %d characters", q.Label, maxTextAnswerLength)
-			}
-
-		case "select":
-			if answer != "" {
-				optionSet := make(map[string]bool, len(q.Options))
-				for _, opt := range q.Options {
-					optionSet[opt] = true
-				}
-				if !optionSet[answer] {
-					return fmt.Errorf("invalid option for %q: %s", q.Label, answer)
-				}
-			}
-
-		case "checkbox":
-			if answer != "" {
-				var selected []string
-				if err := json.Unmarshal([]byte(answer), &selected); err != nil {
-					return fmt.Errorf("checkbox answer for %q must be a JSON array", q.Label)
-				}
-				optionSet := make(map[string]bool, len(q.Options))
-				for _, opt := range q.Options {
-					optionSet[opt] = true
-				}
-				for _, sel := range selected {
-					if !optionSet[sel] {
-						return fmt.Errorf("invalid option for %q: %s", q.Label, sel)
-					}
-				}
-			}
-		}
-
-		a := &Answer{
-			ID:         uuid.Must(uuid.NewV7()).String(),
-			AttendeeID: attendeeID,
-			QuestionID: questionID,
-			Answer:     answer,
-		}
-		if err := s.store.UpsertAnswer(ctx, a); err != nil {
-			return fmt.Errorf("save answer: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// GetAnswersForAttendee returns all answers for a given attendee.
-func (s *Service) GetAnswersForAttendee(ctx context.Context, attendeeID string) ([]*Answer, error) {
-	answers, err := s.store.FindAnswersByAttendeeID(ctx, attendeeID)
-	if err != nil {
-		return nil, err
-	}
-	if answers == nil {
-		answers = []*Answer{}
-	}
-	return answers, nil
-}
-
-// GetAnswersByEvent returns all answers for an event, grouped by attendee ID.
-func (s *Service) GetAnswersByEvent(ctx context.Context, eventID string) (map[string][]*Answer, error) {
-	return s.store.FindAnswersByEventID(ctx, eventID)
 }

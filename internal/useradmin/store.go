@@ -226,7 +226,7 @@ func (s *Store) UpdateStatusTx(ctx context.Context, tx database.Tx, userID, stat
 		return ErrUserNotFound
 	}
 	if status == auth.UserStatusDisabled {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE organizer_id = ?", userID); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", userID); err != nil {
 			return fmt.Errorf("revoke disabled user sessions: %w", err)
 		}
 		if err := s.RevokePendingInvitesTx(ctx, tx, userID, now); err != nil {
@@ -245,9 +245,6 @@ func (s *Store) UpdateRoleTx(ctx context.Context, tx database.Tx, userID, role s
 	affected, err := result.RowsAffected()
 	if err != nil || affected != 1 {
 		return ErrUserNotFound
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE organizers SET is_admin = ?, updated_at = ? WHERE id = ?", role == auth.InstanceRoleAdmin, nowText, userID); err != nil {
-		return fmt.Errorf("update organizer compatibility role: %w", err)
 	}
 	return nil
 }

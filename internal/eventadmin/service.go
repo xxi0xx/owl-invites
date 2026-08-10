@@ -111,9 +111,6 @@ func (s *Service) TransferOwnership(ctx context.Context, actor *auth.User, event
 			return fmt.Errorf("create new owner membership: %w", err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE events SET organizer_id = ?, updated_at = ? WHERE id = ?", newOwnerUserID, nowText, eventID); err != nil {
-		return fmt.Errorf("update legacy event owner reference: %w", err)
-	}
 	if err := s.instanceStore.InsertAuditTx(ctx, tx, &persistedActor.ID, "user", "event_ownership_transferred", &newOwnerUserID, &eventID,
 		map[string]any{"fromUserId": oldOwnerUserID, "toUserId": newOwnerUserID}, now); err != nil {
 		return err

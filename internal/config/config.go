@@ -22,10 +22,13 @@ type Config struct {
 	DBDSN    string
 
 	// Auth
-	MagicLinkExpiry     time.Duration
-	SessionExpiry       time.Duration
-	AccountInviteExpiry time.Duration
-	BaseURL             string
+	MagicLinkExpiry          time.Duration
+	SessionExpiry            time.Duration
+	AccountInviteExpiry      time.Duration
+	InvitationSessionExpiry  time.Duration
+	InvitationRecoveryExpiry time.Duration
+	InvitationSecretKey      string
+	BaseURL                  string
 
 	// Notifications
 	NotificationEmailProvider string
@@ -117,6 +120,19 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid OWL_INVITES_ACCOUNT_INVITE_EXPIRY: must be greater than zero")
 	}
 
+	invitationSessionExpiry, err := time.ParseDuration(getEnv("OWL_INVITES_INVITATION_SESSION_EXPIRY", "720h"))
+	if err != nil || invitationSessionExpiry <= 0 {
+		return nil, fmt.Errorf("invalid OWL_INVITES_INVITATION_SESSION_EXPIRY: must be a positive duration")
+	}
+	invitationRecoveryExpiry, err := time.ParseDuration(getEnv("OWL_INVITES_INVITATION_RECOVERY_EXPIRY", "15m"))
+	if err != nil || invitationRecoveryExpiry <= 0 {
+		return nil, fmt.Errorf("invalid OWL_INVITES_INVITATION_RECOVERY_EXPIRY: must be a positive duration")
+	}
+	invitationSecretKey := os.Getenv("OWL_INVITES_SECRET_KEY")
+	if len(invitationSecretKey) < 32 {
+		return nil, fmt.Errorf("OWL_INVITES_SECRET_KEY is required and must contain at least 32 bytes")
+	}
+
 	baseURL := getEnv("BASE_URL", "http://localhost:8080")
 
 	smtpPort, err := strconv.Atoi(getEnv("SMTP_PORT", "587"))
@@ -172,10 +188,13 @@ func Load() (*Config, error) {
 		DBDriver: dbDriver,
 		DBDSN:    dbDSN,
 
-		MagicLinkExpiry:     magicLinkExpiry,
-		SessionExpiry:       sessionExpiry,
-		AccountInviteExpiry: accountInviteExpiry,
-		BaseURL:             baseURL,
+		MagicLinkExpiry:          magicLinkExpiry,
+		SessionExpiry:            sessionExpiry,
+		AccountInviteExpiry:      accountInviteExpiry,
+		InvitationSessionExpiry:  invitationSessionExpiry,
+		InvitationRecoveryExpiry: invitationRecoveryExpiry,
+		InvitationSecretKey:      invitationSecretKey,
+		BaseURL:                  baseURL,
 
 		NotificationEmailProvider: getEnv("NOTIFICATION_EMAIL_PROVIDER", "smtp"),
 		NotificationSMSProvider:   getEnv("NOTIFICATION_SMS_PROVIDER", ""),

@@ -149,8 +149,8 @@ func setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
 //     request header must match the csrf_token cookie value and (if the
 //     user is authenticated) the HMAC must match the current session.
 //
-// Paths listed in excludePaths are exempt from CSRF validation (e.g. public
-// RSVP endpoints that use honeypot protection instead).
+// Paths listed in excludePaths are exempt from CSRF validation (for example,
+// one-time or fragment-delivered capability bootstrap endpoints).
 func CSRFMiddleware(excludePaths []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +174,11 @@ func CSRFMiddleware(excludePaths []string) func(http.Handler) http.Handler {
 			sessionValue := ""
 			if sc, err := r.Cookie("session"); err == nil {
 				sessionValue = sc.Value
+			} else if invitationSession, invitationErr := r.Cookie("owl_invitation_session"); invitationErr == nil {
+				// Invitation sessions are an independent authorization boundary.
+				// Bind CSRF tokens to them exactly as organizer sessions so a token
+				// minted for one household cannot be replayed in another.
+				sessionValue = invitationSession.Value
 			}
 
 			switch r.Method {

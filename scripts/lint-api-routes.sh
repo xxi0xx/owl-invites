@@ -41,16 +41,37 @@ extract_routes() {
   extract_routes event     /events
   extract_routes event     /events/series series_handler.go
   extract_routes question  /events/:p/questions
-  extract_routes rsvp      /rsvp
   extract_routes invite    /invite
-  extract_routes message   /messages
   extract_routes scheduler /reminders
   extract_routes feedback     /feedback
-  extract_routes comment      /comments
   extract_routes webhook      /webhooks
   extract_routes notification /notifications
   extract_routes suppression    /unsubscribe
   extract_routes instanceconfig /setup
+
+  # The invitation handler intentionally exposes two authorization surfaces
+  # from one package (event-member administration and invitation-session
+  # access), so list its mount-aware routes explicitly rather than assigning a
+  # single package prefix.
+  cat <<'EOF'
+get /events/:p/invitations
+post /events/:p/invitations
+get /events/:p/invitations/:p
+post /events/:p/invitations/:p/deliver
+post /events/:p/invitations/:p/rotate
+post /events/:p/invitations/:p/revoke
+post /events/:p/invitations/messages
+get /events/:p/open-enrollment
+put /events/:p/open-enrollment
+post /events/:p/open-enrollment/rotate
+post /invitations/exchange
+get /invitations/session
+put /invitations/session/response
+post /invitations/recovery/request
+post /invitations/recovery/exchange
+post /invitations/open/inspect
+post /invitations/open/enroll
+EOF
 
   # Inline routes defined directly in router.go (not via handler.go).
   grep -E 'api\.(Get|Post|Put|Patch|Delete)\("/' "$ROOT/internal/server/router.go" 2>/dev/null | while IFS= read -r line; do

@@ -128,7 +128,7 @@
 								</Badge>
 							</div>
 						</div>
-						<div class="mt-4 flex items-center justify-between text-xs text-neutral-500">
+						<div class="mt-4 text-xs text-neutral-500">
 							<span>
 								{#if daysUntil(event.eventDate) > 0}
 									{daysUntil(event.eventDate)} days away
@@ -138,7 +138,6 @@
 									{Math.abs(daysUntil(event.eventDate))} days ago
 								{/if}
 							</span>
-							<span class="font-mono text-neutral-400">{event.shareToken}</span>
 						</div>
 					</Card>
 				</a>

@@ -2,6 +2,7 @@ package database
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -14,33 +15,15 @@ import (
 //go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
 var migrationsFS embed.FS
 
+const irreversibleGate2Version uint = 36
+
+var ErrGate2RollbackUnsupported = errors.New("migration 36 is irreversible: restore a verified pre-upgrade backup to roll back Gate 2")
+
 // RunMigrations applies all pending database migrations.
 func RunMigrations(db DB) error {
-	source, err := iofs.New(migrationsFS, "migrations/"+db.Dialect())
+	m, err := newMigrator(db)
 	if err != nil {
-		return fmt.Errorf("migration source: %w", err)
-	}
-
-	var driver database.Driver
-
-	switch db.Dialect() {
-	case "sqlite":
-		driver, err = sqlite3.WithInstance(db.Underlying(), &sqlite3.Config{})
-		if err != nil {
-			return fmt.Errorf("sqlite migration driver: %w", err)
-		}
-	case "postgres":
-		driver, err = postgres.WithInstance(db.Underlying(), &postgres.Config{})
-		if err != nil {
-			return fmt.Errorf("postgres migration driver: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported dialect for migrations: %s", db.Dialect())
-	}
-
-	m, err := migrate.NewWithInstance("iofs", source, db.Dialect(), driver)
-	if err != nil {
-		return fmt.Errorf("migrate instance: %w", err)
+		return err
 	}
 
 	// Recover from dirty migration state. When a previous migration was
@@ -59,4 +42,56 @@ func RunMigrations(db DB) error {
 	}
 
 	return nil
+}
+
+// RunMigrationsTo applies migrations up or down to an exact version. It is
+// primarily used by cross-dialect migration tests that seed a pre-upgrade
+// schema before applying the next migration.
+func RunMigrationsTo(db DB, target uint) error {
+	m, err := newMigrator(db)
+	if err != nil {
+		return err
+	}
+	current, _, versionErr := m.Version()
+	if versionErr != nil && versionErr != migrate.ErrNilVersion {
+		return fmt.Errorf("read migration version: %w", versionErr)
+	}
+	if versionErr == nil && current >= irreversibleGate2Version && target < irreversibleGate2Version {
+		return ErrGate2RollbackUnsupported
+	}
+	if err := m.Migrate(target); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("migrate to %d: %w", target, err)
+	}
+	return nil
+}
+
+func newMigrator(db DB) (*migrate.Migrate, error) {
+	source, err := iofs.New(migrationsFS, "migrations/"+db.Dialect())
+	if err != nil {
+		return nil, fmt.Errorf("migration source: %w", err)
+	}
+
+	var driver database.Driver
+
+	switch db.Dialect() {
+	case "sqlite":
+		driver, err = sqlite3.WithInstance(db.Underlying(), &sqlite3.Config{})
+		if err != nil {
+			return nil, fmt.Errorf("sqlite migration driver: %w", err)
+		}
+	case "postgres":
+		driver, err = postgres.WithInstance(db.Underlying(), &postgres.Config{})
+		if err != nil {
+			return nil, fmt.Errorf("postgres migration driver: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported dialect for migrations: %s", db.Dialect())
+	}
+
+	m, err := migrate.NewWithInstance("iofs", source, db.Dialect(), driver)
+	if err != nil {
+		return nil, fmt.Errorf("migrate instance: %w", err)
+	}
+
+	return m, nil
 }

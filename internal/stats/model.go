@@ -3,8 +3,8 @@ package stats
 // InstanceStats holds all aggregate statistics for the admin dashboard.
 type InstanceStats struct {
 	Events        EventStats        `json:"events"`
-	Attendees     AttendeeStats     `json:"attendees"`
-	Organizers    OrganizerStats    `json:"organizers"`
+	Guests        GuestStats        `json:"guests"`
+	Users         UserStats         `json:"users"`
 	Features      FeatureAdoption   `json:"features"`
 	Notifications NotificationStats `json:"notifications"`
 }
@@ -18,31 +18,28 @@ type EventStats struct {
 	Archived  int `json:"archived"`
 }
 
-// AttendeeStats contains aggregate attendee metrics.
-type AttendeeStats struct {
+// GuestStats contains aggregate per-guest response metrics.
+type GuestStats struct {
 	Total          int     `json:"total"`
 	TotalHeadcount int     `json:"totalHeadcount"`
 	Attending      int     `json:"attending"`
 	Maybe          int     `json:"maybe"`
 	Declined       int     `json:"declined"`
 	Pending        int     `json:"pending"`
-	Waitlisted     int     `json:"waitlisted"`
 	AvgPerEvent    float64 `json:"avgPerEvent"`
 }
 
-// OrganizerStats contains aggregate organizer metrics.
-type OrganizerStats struct {
+type UserStats struct {
 	Total int `json:"total"`
 }
 
 // FeatureAdoption tracks how many events use optional features.
 type FeatureAdoption struct {
-	WaitlistEvents        int `json:"waitlistEvents"`
-	CommentsEnabledEvents int `json:"commentsEnabledEvents"`
-	CohostedEvents        int `json:"cohostedEvents"`
-	EventsWithQuestions   int `json:"eventsWithQuestions"`
-	EventsWithCapacity    int `json:"eventsWithCapacity"`
-	SeriesEvents          int `json:"seriesEvents"`
+	OpenEnrollmentEvents int `json:"openEnrollmentEvents"`
+	CohostedEvents       int `json:"cohostedEvents"`
+	EventsWithQuestions  int `json:"eventsWithQuestions"`
+	EventsWithCapacity   int `json:"eventsWithCapacity"`
+	SeriesEvents         int `json:"seriesEvents"`
 }
 
 // NotificationStats contains aggregate email/notification metrics.

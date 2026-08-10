@@ -39,6 +39,9 @@ func newTestServer(t *testing.T) (*Server, database.DB) {
 		SMTPHost:                  "",
 		MagicLinkExpiry:           15 * time.Minute,
 		SessionExpiry:             168 * time.Hour,
+		InvitationSessionExpiry:   30 * 24 * time.Hour,
+		InvitationRecoveryExpiry:  15 * time.Minute,
+		InvitationSecretKey:       "test-only-owl-invites-secret-key-32-bytes",
 		DefaultRetentionDays:      30,
 		MaxCoHostsPerEvent:        10,
 		UploadsDir:                t.TempDir(),
@@ -211,6 +214,82 @@ func TestServerIntegration(t *testing.T) {
 		// Invalid token is handled by the suppression handler as a 4xx.
 		if rr.Code < 400 || rr.Code >= 500 {
 			t.Fatalf("GET /unsubscribe?token=bogus: got %d, want a 4xx (body=%s)", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("invitation bootstrap is exempt but session mutation requires bound CSRF", func(t *testing.T) {
+		bootstrapBody, _ := json.Marshal(map[string]string{"capability": "invalid-capability"})
+		bootstrap := doJSON(h, http.MethodPost, "/api/v1/invitations/exchange", bootstrapBody)
+		if bootstrap.Code == http.StatusForbidden {
+			t.Fatalf("invitation capability exchange was CSRF-rejected: %s", bootstrap.Body.String())
+		}
+		if bootstrap.Code != http.StatusUnauthorized {
+			t.Fatalf("invalid invitation exchange: got %d, want 401 (body=%s)", bootstrap.Code, bootstrap.Body.String())
+		}
+
+		mutationBody, _ := json.Marshal(map[string]any{
+			"version": 1, "assignedGuests": []any{}, "additionalGuests": []any{},
+			"invitationAnswers": map[string]string{}, "guestAnswers": map[string]any{},
+		})
+		mutation := httptest.NewRequest(http.MethodPut, "/api/v1/invitations/session/response", bytes.NewReader(mutationBody))
+		mutation.Header.Set("Content-Type", "application/json")
+		mutation.AddCookie(&http.Cookie{Name: "owl_invitation_session", Value: "household-session"})
+		mutationResponse := httptest.NewRecorder()
+		h.ServeHTTP(mutationResponse, mutation)
+		if mutationResponse.Code != http.StatusForbidden {
+			t.Fatalf("invitation session mutation without CSRF: got %d, want 403 (body=%s)", mutationResponse.Code, mutationResponse.Body.String())
+		}
+	})
+
+	t.Run("event detail and invitation subresources do not shadow each other", func(t *testing.T) {
+		sessionToken := createSession(t, db, "route-owner@example.com")
+		getReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+		getReq.AddCookie(&http.Cookie{Name: "session", Value: sessionToken})
+		getRR := httptest.NewRecorder()
+		h.ServeHTTP(getRR, getReq)
+		csrf := cookieValue(getRR, "csrf_token")
+		if csrf == "" {
+			t.Fatal("expected authenticated GET to mint CSRF token")
+		}
+
+		createBody, _ := json.Marshal(map[string]any{
+			"title": "Route boundary", "eventDate": time.Now().UTC().Add(24 * time.Hour),
+			"timezone": "UTC", "retentionDays": 30,
+		})
+		createReq := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewReader(createBody))
+		createReq.Header.Set("Content-Type", "application/json")
+		createReq.Header.Set("X-CSRF-Token", csrf)
+		createReq.AddCookie(&http.Cookie{Name: "session", Value: sessionToken})
+		createReq.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrf})
+		createRR := httptest.NewRecorder()
+		h.ServeHTTP(createRR, createReq)
+		if createRR.Code != http.StatusCreated {
+			t.Fatalf("create event: got %d, want 201 (body=%s)", createRR.Code, createRR.Body.String())
+		}
+		var created struct {
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil || created.Data.ID == "" {
+			t.Fatalf("decode created event: %v (body=%s)", err, createRR.Body.String())
+		}
+
+		for _, path := range []string{
+			"/api/v1/events/" + created.Data.ID,
+			"/api/v1/events/" + created.Data.ID + "/invitations",
+			"/api/v1/events/" + created.Data.ID + "/open-enrollment",
+		} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.AddCookie(&http.Cookie{Name: "session", Value: sessionToken})
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s: got %d, want 200 (body=%s)", path, rr.Code, rr.Body.String())
+			}
+			if got := rr.Header().Get("Content-Type"); got != "application/json" {
+				t.Fatalf("GET %s Content-Type: got %q, want application/json (body=%s)", path, got, rr.Body.String())
+			}
 		}
 	})
 

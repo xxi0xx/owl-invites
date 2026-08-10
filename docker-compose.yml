@@ -18,6 +18,7 @@ services:
       - SMTP_PORT=1025
       - SMTP_FROM=noreply@owl-invites.local
       - BASE_URL=http://localhost:8091
+      - OWL_INVITES_SECRET_KEY=${OWL_INVITES_SECRET_KEY:?OWL_INVITES_SECRET_KEY required}
       - FEEDBACK_EMAIL=feedback@openrsvp.local
     restart: unless-stopped
 

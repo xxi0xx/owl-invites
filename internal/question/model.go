@@ -7,9 +7,10 @@ type Question struct {
 	ID        string    `json:"id"`
 	EventID   string    `json:"eventId"`
 	Label     string    `json:"label"`
-	Type      string    `json:"type"`      // text, select, checkbox
-	Options   []string  `json:"options"`   // For select/checkbox
+	Type      string    `json:"type"`    // text, select, checkbox
+	Options   []string  `json:"options"` // For select/checkbox
 	Required  bool      `json:"required"`
+	Scope     string    `json:"scope"` // invitation or guest
 	SortOrder int       `json:"sortOrder"`
 	Deleted   bool      `json:"-"` // Hidden from API
 	CreatedAt time.Time `json:"createdAt"`
@@ -22,6 +23,7 @@ type CreateQuestionRequest struct {
 	Type      string   `json:"type"`
 	Options   []string `json:"options,omitempty"`
 	Required  *bool    `json:"required,omitempty"`
+	Scope     string   `json:"scope"`
 	SortOrder *int     `json:"sortOrder,omitempty"`
 }
 
@@ -31,20 +33,6 @@ type UpdateQuestionRequest struct {
 	Type      *string  `json:"type,omitempty"`
 	Options   []string `json:"options,omitempty"`
 	Required  *bool    `json:"required,omitempty"`
+	Scope     *string  `json:"scope,omitempty"`
 	SortOrder *int     `json:"sortOrder,omitempty"`
-}
-
-// Answer represents an attendee's answer to a question.
-type Answer struct {
-	ID         string    `json:"id"`
-	AttendeeID string    `json:"attendeeId"`
-	QuestionID string    `json:"questionId"`
-	Answer     string    `json:"answer"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
-}
-
-// SubmitAnswersRequest is the request body for submitting answers.
-type SubmitAnswersRequest struct {
-	Answers map[string]string `json:"answers"` // questionID -> answer
 }

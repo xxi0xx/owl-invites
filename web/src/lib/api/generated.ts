@@ -86,14 +86,9 @@ export type Event = {
 	"timezone": string;
 	"retentionDays": number;
 	"status": "draft" | "published" | "cancelled" | "archived";
-	"shareToken": string;
-	"contactRequirement": "email" | "phone" | "email_or_phone" | "email_and_phone";
 	"showHeadcount": boolean;
 	"showGuestList": boolean;
 	"rsvpDeadline"?: string;
-	"maxCapacity"?: number;
-	"waitlistEnabled": boolean;
-	"commentsEnabled": boolean;
 	"seriesId"?: string;
 	"seriesIndex"?: number;
 	"seriesOverride": boolean;
@@ -110,6 +105,139 @@ export type EventMembership = {
 	"email"?: string;
 	"name"?: string;
 	"createdAt": string;
+};
+
+export type Invitation = {
+	"id": string;
+	"eventId": string;
+	"label": string;
+	"contactEmail"?: string;
+	"contactPhone"?: string;
+	"preferredDeliveryMethod": "email" | "sms" | "none";
+	"additionalGuestAllowance": number;
+	"source": "private" | "open";
+	"tokenVersion": number;
+	"revokedAt"?: string;
+	"createdAt": string;
+	"updatedAt": string;
+};
+
+export type InvitationGuest = {
+	"id": string;
+	"invitationId": string;
+	"name": string;
+	"origin": "assigned" | "additional";
+	"attendance": "pending" | "attending" | "maybe" | "declined";
+};
+
+export type InvitationQuestion = {
+	"id": string;
+	"label": string;
+	"type": "text" | "select" | "checkbox";
+	"options": Array<string>;
+	"required": boolean;
+	"scope": "invitation" | "guest";
+	"sortOrder": number;
+};
+
+export type InvitationHousehold = {
+	"invitation": Invitation;
+	"event": Record<string, unknown>;
+	"response": Record<string, unknown>;
+	"guests": Array<InvitationGuest>;
+	"questions": Array<InvitationQuestion>;
+	"invitationAnswers": Array<Record<string, unknown>>;
+	"guestAnswers": Array<Record<string, unknown>>;
+};
+
+export type CreateInvitationRequest = {
+	"label": string;
+	"contactEmail"?: string;
+	"contactPhone"?: string;
+	"preferredDeliveryMethod": "email" | "sms" | "none";
+	"additionalGuestAllowance": number;
+	"assignedGuestNames": Array<string>;
+	"send"?: boolean;
+};
+
+export type InvitationDeliveryResult = {
+	"status": "not_requested" | "sent" | "failed";
+	"warning"?: string;
+};
+
+export type CreateInvitationResult = {
+	"invitation": Invitation;
+	"guests": Array<InvitationGuest>;
+	"accessUrl": string;
+	"delivery": InvitationDeliveryResult;
+};
+
+export type InvitationCapabilityRequest = {
+	"capability": string;
+};
+
+export type InvitationSubmitRequest = {
+	"version": number;
+	"assignedGuests": Array<Record<string, unknown>>;
+	"additionalGuests": Array<Record<string, unknown>>;
+	"invitationAnswers": Record<string, unknown>;
+	"guestAnswers": Record<string, unknown>;
+};
+
+export type RecoveryRequest = {
+	"eventId": string;
+	"contact": string;
+};
+
+export type OpenEnrollmentConfigRequest = {
+	"enabled": boolean;
+	"opensAt"?: string;
+	"closesAt"?: string;
+	"maxPartySize": number;
+	"capacity"?: number;
+};
+
+export type OpenEnrollmentConfig = {
+	"id": string;
+	"eventId": string;
+	"enabled": boolean;
+	"opensAt"?: string;
+	"closesAt"?: string;
+	"maxPartySize": number;
+	"capacity"?: number;
+	"tokenVersion": number;
+	"revokedAt"?: string;
+	"createdAt": string;
+	"updatedAt": string;
+};
+
+export type OpenEnrollmentResult = {
+	"config": OpenEnrollmentConfig;
+	"accessUrl": string;
+};
+
+export type InvitationMessageRequest = {
+	"recipientGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"subject": string;
+	"body": string;
+};
+
+export type InvitationMessageResult = {
+	"sent": number;
+};
+
+export type OpenEnrollmentRequest = {
+	"capability": string;
+	"label": string;
+	"contactEmail": string;
+	"contactPhone"?: string;
+	"preferredDeliveryMethod": "email";
+	"guestNames": Array<string>;
+};
+
+export type OpenEnrollmentCreateResult = {
+	"data": InvitationHousehold;
+	"delivery": InvitationDeliveryResult;
 };
 
 export interface Operations {
@@ -294,6 +422,137 @@ export interface Operations {
 };
 		response: void;
 	};
+	listInvitations: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: {
+	"data": Array<InvitationHousehold>;
+};
+	};
+	createInvitation: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: CreateInvitationRequest;
+		response: {
+	"data": CreateInvitationResult;
+};
+	};
+	getInvitation: {
+		parameters: {
+	"eventId": string;
+	"invitationId": string;
+};
+		requestBody: void;
+		response: {
+	"data": InvitationHousehold;
+};
+	};
+	deliverInvitation: {
+		parameters: {
+	"eventId": string;
+	"invitationId": string;
+};
+		requestBody: void;
+		response: void;
+	};
+	rotateInvitationCapability: {
+		parameters: {
+	"eventId": string;
+	"invitationId": string;
+};
+		requestBody: void;
+		response: {
+	"data": CreateInvitationResult;
+};
+	};
+	revokeInvitation: {
+		parameters: {
+	"eventId": string;
+	"invitationId": string;
+};
+		requestBody: {
+	"reason"?: string;
+};
+		response: void;
+	};
+	messageInvitationHouseholds: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: InvitationMessageRequest;
+		response: {
+	"data": InvitationMessageResult;
+};
+	};
+	getOpenEnrollment: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: {
+	"data": OpenEnrollmentResult | null;
+};
+	};
+	configureOpenEnrollment: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: OpenEnrollmentConfigRequest;
+		response: {
+	"data": OpenEnrollmentResult;
+};
+	};
+	rotateOpenEnrollmentCapability: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: {
+	"data": OpenEnrollmentResult;
+};
+	};
+	exchangeInvitationCapability: {
+		parameters: void;
+		requestBody: InvitationCapabilityRequest;
+		response: {
+	"data": InvitationHousehold;
+};
+	};
+	getInvitationSession: {
+		parameters: void;
+		requestBody: void;
+		response: {
+	"data": InvitationHousehold;
+};
+	};
+	submitInvitationResponse: {
+		parameters: void;
+		requestBody: InvitationSubmitRequest;
+		response: void;
+	};
+	requestInvitationRecovery: {
+		parameters: void;
+		requestBody: RecoveryRequest;
+		response: void;
+	};
+	exchangeInvitationRecovery: {
+		parameters: void;
+		requestBody: InvitationCapabilityRequest;
+		response: void;
+	};
+	inspectOpenEnrollment: {
+		parameters: void;
+		requestBody: InvitationCapabilityRequest;
+		response: void;
+	};
+	enrollOpenInvitation: {
+		parameters: void;
+		requestBody: OpenEnrollmentRequest;
+		response: OpenEnrollmentCreateResult;
+	};
 }
 
 export const operationDefinitions = {
@@ -319,4 +578,21 @@ export const operationDefinitions = {
 	listEvents: {"method":"GET","path":"/events","pathParams":[],"queryParams":[]},
 	listEventCohosts: {"method":"GET","path":"/events/{eventId}/cohosts","pathParams":["eventId"],"queryParams":[]},
 	inviteEventCohost: {"method":"POST","path":"/events/{eventId}/cohosts","pathParams":["eventId"],"queryParams":[]},
+	listInvitations: {"method":"GET","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
+	createInvitation: {"method":"POST","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
+	getInvitation: {"method":"GET","path":"/events/{eventId}/invitations/{invitationId}","pathParams":["eventId","invitationId"],"queryParams":[]},
+	deliverInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/deliver","pathParams":["eventId","invitationId"],"queryParams":[]},
+	rotateInvitationCapability: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/rotate","pathParams":["eventId","invitationId"],"queryParams":[]},
+	revokeInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/revoke","pathParams":["eventId","invitationId"],"queryParams":[]},
+	messageInvitationHouseholds: {"method":"POST","path":"/events/{eventId}/invitations/messages","pathParams":["eventId"],"queryParams":[]},
+	getOpenEnrollment: {"method":"GET","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
+	configureOpenEnrollment: {"method":"PUT","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
+	rotateOpenEnrollmentCapability: {"method":"POST","path":"/events/{eventId}/open-enrollment/rotate","pathParams":["eventId"],"queryParams":[]},
+	exchangeInvitationCapability: {"method":"POST","path":"/invitations/exchange","pathParams":[],"queryParams":[]},
+	getInvitationSession: {"method":"GET","path":"/invitations/session","pathParams":[],"queryParams":[]},
+	submitInvitationResponse: {"method":"PUT","path":"/invitations/session/response","pathParams":[],"queryParams":[]},
+	requestInvitationRecovery: {"method":"POST","path":"/invitations/recovery/request","pathParams":[],"queryParams":[]},
+	exchangeInvitationRecovery: {"method":"POST","path":"/invitations/recovery/exchange","pathParams":[],"queryParams":[]},
+	inspectOpenEnrollment: {"method":"POST","path":"/invitations/open/inspect","pathParams":[],"queryParams":[]},
+	enrollOpenInvitation: {"method":"POST","path":"/invitations/open/enroll","pathParams":[],"queryParams":[]},
 } as const;

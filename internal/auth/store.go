@@ -88,9 +88,7 @@ func (s *Store) CreateOrganizer(ctx context.Context, email string) (*Organizer, 
 	return user, nil
 }
 
-// CreateUserTx creates a persistent user and its temporary legacy organizer
-// shadow in one transaction. The shadow is required only until event foreign
-// keys are migrated to users in the membership slice.
+// CreateUserTx creates a persistent Owl Invites user in a caller-owned transaction.
 func (s *Store) CreateUserTx(ctx context.Context, tx database.Tx, email, name, timezone, role, status string, invitedBy *string) (*User, error) {
 	return createUser(ctx, tx, email, name, timezone, role, status, invitedBy)
 }
@@ -118,14 +116,6 @@ func createUser(ctx context.Context, exec executor, email, name, timezone, role,
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	_, err = exec.ExecContext(ctx,
-		"INSERT INTO organizers (id, email, name, timezone, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		id, email, name, timezone, role == InstanceRoleAdmin, now, now,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create organizer compatibility row: %w", err)
-	}
-
 	return findOrganizerByID(ctx, exec, id)
 }
 
@@ -133,25 +123,11 @@ func createUser(ctx context.Context, exec executor, email, name, timezone, role,
 func (s *Store) UpdateOrganizer(ctx context.Context, organizer *Organizer) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin update user: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	_, err = tx.ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		"UPDATE users SET display_name = ?, timezone = ?, updated_at = ? WHERE id = ?",
 		organizer.Name, organizer.Timezone, now, organizer.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx,
-		"UPDATE organizers SET name = ?, timezone = ?, updated_at = ? WHERE id = ?",
-		organizer.Name, organizer.Timezone, now, organizer.ID); err != nil {
-		return fmt.Errorf("update organizer compatibility row: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit update user: %w", err)
 	}
 	return nil
 }
@@ -163,7 +139,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, tokenHash, organizerID stri
 	exp := expiresAt.UTC().Format(time.RFC3339)
 
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO magic_links (id, token_hash, organizer_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+		"INSERT INTO magic_links (id, token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
 		id, tokenHash, organizerID, exp, now,
 	)
 	if err != nil {
@@ -176,7 +152,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, tokenHash, organizerID stri
 // FindMagicLinkByHash retrieves a magic link by its token hash.
 func (s *Store) FindMagicLinkByHash(ctx context.Context, tokenHash string) (*MagicLink, error) {
 	row := s.db.QueryRowContext(ctx,
-		"SELECT id, token_hash, organizer_id, expires_at, used_at, created_at FROM magic_links WHERE token_hash = ?",
+		"SELECT id, token_hash, user_id, expires_at, used_at, created_at FROM magic_links WHERE token_hash = ?",
 		tokenHash,
 	)
 
@@ -262,7 +238,7 @@ func createSession(ctx context.Context, exec executor, tokenHash, organizerID st
 	exp := expiresAt.UTC().Format(time.RFC3339)
 
 	_, err := exec.ExecContext(ctx,
-		"INSERT INTO sessions (id, token_hash, organizer_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+		"INSERT INTO sessions (id, token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
 		id, tokenHash, organizerID, exp, now,
 	)
 	if err != nil {
@@ -281,7 +257,7 @@ func createSession(ctx context.Context, exec executor, tokenHash, organizerID st
 // FindSessionByHash retrieves a session by its token hash.
 func (s *Store) FindSessionByHash(ctx context.Context, tokenHash string) (*Session, error) {
 	row := s.db.QueryRowContext(ctx,
-		"SELECT id, token_hash, organizer_id, expires_at, created_at FROM sessions WHERE token_hash = ?",
+		"SELECT id, token_hash, user_id, expires_at, created_at FROM sessions WHERE token_hash = ?",
 		tokenHash,
 	)
 
@@ -344,20 +320,8 @@ func (s *Store) SetAdminStatus(ctx context.Context, id string, isAdmin bool) err
 	if isAdmin {
 		role = InstanceRoleAdmin
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin set admin status: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, "UPDATE users SET instance_role = ?, updated_at = ? WHERE id = ?", role, time.Now().UTC().Format(time.RFC3339), id); err != nil {
+	if _, err := s.db.ExecContext(ctx, "UPDATE users SET instance_role = ?, updated_at = ? WHERE id = ?", role, time.Now().UTC().Format(time.RFC3339), id); err != nil {
 		return fmt.Errorf("set user role: %w", err)
-	}
-	_, err = tx.ExecContext(ctx, "UPDATE organizers SET is_admin = ? WHERE id = ?", isAdmin, id)
-	if err != nil {
-		return fmt.Errorf("set organizer compatibility role: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit set admin status: %w", err)
 	}
 	return nil
 }
@@ -399,10 +363,6 @@ func (s *Store) PromoteBootstrapAdminTx(ctx context.Context, tx database.Tx, id,
 	affected, err := result.RowsAffected()
 	if err != nil || affected != 1 {
 		return nil, fmt.Errorf("promote bootstrap admin: user not found")
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE organizers SET name = ?, timezone = ?,
-		is_admin = ?, updated_at = ? WHERE id = ?`, name, timezone, true, now, id); err != nil {
-		return nil, fmt.Errorf("promote organizer compatibility row: %w", err)
 	}
 	return findOrganizerByID(ctx, tx, id)
 }
@@ -460,7 +420,7 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 	}
 
 	doc.Series, err = queryRowsByOrganizer(ctx, s.db,
-		"SELECT * FROM event_series WHERE organizer_id = ? ORDER BY created_at", organizerID)
+		"SELECT * FROM event_series WHERE owner_user_id = ? ORDER BY created_at", organizerID)
 	if err != nil {
 		return nil, fmt.Errorf("export series: %w", err)
 	}
@@ -470,14 +430,13 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 
 		// Child tables keyed directly by event_id.
 		eventChildren := map[string]*[]map[string]any{
-			"SELECT * FROM attendees WHERE event_id IN " + in:        &doc.Attendees,
-			"SELECT * FROM event_questions WHERE event_id IN " + in:  &doc.Questions,
-			"SELECT * FROM event_comments WHERE event_id IN " + in:   &doc.Comments,
-			"SELECT * FROM messages WHERE event_id IN " + in:         &doc.Messages,
-			"SELECT * FROM webhooks WHERE event_id IN " + in:         &doc.Webhooks,
-			"SELECT * FROM reminders WHERE event_id IN " + in:        &doc.Reminders,
-			"SELECT * FROM invite_cards WHERE event_id IN " + in:     &doc.InviteCards,
-			"SELECT * FROM notification_log WHERE event_id IN " + in: &doc.NotificationLog,
+			"SELECT * FROM invitations WHERE event_id IN " + in:         &doc.Invitations,
+			"SELECT * FROM event_questions WHERE event_id IN " + in:     &doc.Questions,
+			"SELECT * FROM invitation_messages WHERE event_id IN " + in: &doc.Messages,
+			"SELECT * FROM webhooks WHERE event_id IN " + in:            &doc.Webhooks,
+			"SELECT * FROM reminders WHERE event_id IN " + in:           &doc.Reminders,
+			"SELECT * FROM invite_cards WHERE event_id IN " + in:        &doc.InviteCards,
+			"SELECT * FROM notification_log WHERE event_id IN " + in:    &doc.NotificationLog,
 		}
 		for query, dest := range eventChildren {
 			rows, err := queryRows(ctx, s.db, query, args...)
@@ -485,6 +444,29 @@ func (s *Store) ExportOrganizerData(ctx context.Context, organizerID string) (*E
 				return nil, fmt.Errorf("export event children: %w", err)
 			}
 			*dest = rows
+		}
+
+		invitationIDs, err := s.eventInvitationIDs(ctx, eventIDs)
+		if err != nil {
+			return nil, fmt.Errorf("list invitation ids: %w", err)
+		}
+		if len(invitationIDs) > 0 {
+			invIn, invArgs := inClause(invitationIDs)
+			if doc.Guests, err = queryRows(ctx, s.db, "SELECT * FROM guests WHERE invitation_id IN "+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.Responses, err = queryRows(ctx, s.db, "SELECT * FROM rsvp_responses WHERE invitation_id IN "+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.InvitationAnswers, err = queryRows(ctx, s.db, "SELECT * FROM invitation_answers WHERE invitation_id IN "+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.GuestResponses, err = queryRows(ctx, s.db, `SELECT gr.* FROM guest_responses gr JOIN guests g ON g.id = gr.guest_id WHERE g.invitation_id IN `+invIn, invArgs...); err != nil {
+				return nil, err
+			}
+			if doc.GuestAnswers, err = queryRows(ctx, s.db, `SELECT ga.* FROM guest_answers ga JOIN guests g ON g.id = ga.guest_id WHERE g.invitation_id IN `+invIn, invArgs...); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -511,26 +493,11 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		query string
 		args  []any
 	}{
-		// attendee_answers -> attendees -> events
-		{"DELETE FROM attendee_answers WHERE attendee_id IN (SELECT id FROM attendees WHERE event_id IN " + ev + ")", []any{organizerID}},
 		// webhook_deliveries -> webhooks -> events
 		{"DELETE FROM webhook_deliveries WHERE webhook_id IN (SELECT id FROM webhooks WHERE event_id IN " + ev + ")", []any{organizerID}},
-		// event_comments -> events
-		{"DELETE FROM event_comments WHERE event_id IN " + ev, []any{organizerID}},
-		// notification_log -> events
-		{"DELETE FROM notification_log WHERE event_id IN " + ev, []any{organizerID}},
-		// messages -> events
-		{"DELETE FROM messages WHERE event_id IN " + ev, []any{organizerID}},
-		// reminders -> events
-		{"DELETE FROM reminders WHERE event_id IN " + ev, []any{organizerID}},
-		// webhooks -> events
-		{"DELETE FROM webhooks WHERE event_id IN " + ev, []any{organizerID}},
-		// event_questions -> events
-		{"DELETE FROM event_questions WHERE event_id IN " + ev, []any{organizerID}},
-		// invite_cards -> events
-		{"DELETE FROM invite_cards WHERE event_id IN " + ev, []any{organizerID}},
-		// attendees -> events
-		{"DELETE FROM attendees WHERE event_id IN " + ev, []any{organizerID}},
+		// Answer FKs intentionally do not cascade through questions.
+		{"DELETE FROM invitation_answers WHERE invitation_id IN (SELECT id FROM invitations WHERE event_id IN " + ev + ")", []any{organizerID}},
+		{"DELETE FROM guest_answers WHERE guest_id IN (SELECT g.id FROM guests g JOIN invitations i ON i.id = g.invitation_id WHERE i.event_id IN " + ev + ")", []any{organizerID}},
 		// events themselves
 		{"DELETE FROM events WHERE id IN " + ev, []any{organizerID}},
 		// Preserve memberships granted by this user on events that remain by
@@ -541,14 +508,13 @@ func (s *Store) DeleteOrganizerCascade(ctx context.Context, organizerID string) 
 		) WHERE granted_by_user_id = ? AND user_id != ?`, []any{organizerID, organizerID}},
 		// event series owned by the organizer (events.series_id is ON DELETE
 		// SET NULL, and the events are already gone above).
-		{"DELETE FROM event_series WHERE organizer_id = ?", []any{organizerID}},
+		{"DELETE FROM event_series WHERE owner_user_id = ?", []any{organizerID}},
 		// auth records tied directly to the organizer
-		{"DELETE FROM magic_links WHERE organizer_id = ?", []any{organizerID}},
-		{"DELETE FROM sessions WHERE organizer_id = ?", []any{organizerID}},
+		{"DELETE FROM magic_links WHERE user_id = ?", []any{organizerID}},
+		{"DELETE FROM sessions WHERE user_id = ?", []any{organizerID}},
 		{"DELETE FROM account_invites WHERE target_user_id = ? OR invited_by_user_id = ?", []any{organizerID, organizerID}},
 		{"UPDATE users SET invited_by_user_id = NULL WHERE invited_by_user_id = ?", []any{organizerID}},
-		// finally the organizer row itself
-		{"DELETE FROM organizers WHERE id = ?", []any{organizerID}},
+		// finally the persistent user identity
 		{"DELETE FROM users WHERE id = ?", []any{organizerID}},
 	}
 
@@ -574,6 +540,24 @@ func (s *Store) organizerEventIDs(ctx context.Context, organizerID string) ([]st
 	}
 	defer func() { _ = rows.Close() }()
 
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (s *Store) eventInvitationIDs(ctx context.Context, eventIDs []string) ([]string, error) {
+	in, args := inClause(eventIDs)
+	rows, err := s.db.QueryContext(ctx, "SELECT id FROM invitations WHERE event_id IN "+in, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
 	var ids []string
 	for rows.Next() {
 		var id string

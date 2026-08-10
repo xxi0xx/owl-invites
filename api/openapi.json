@@ -3,12 +3,13 @@
   "info": {
     "title": "Owl Invites API",
     "version": "0.1.0",
-    "description": "Gate 1 identity, setup, administration, and event-membership contract."
+    "description": "Gate 2 identity, event membership, invitation household, and RSVP capability contract."
   },
   "servers": [{ "url": "/api/v1" }],
   "components": {
     "securitySchemes": {
-      "sessionCookie": { "type": "apiKey", "in": "cookie", "name": "session" }
+      "sessionCookie": { "type": "apiKey", "in": "cookie", "name": "session" },
+      "invitationSessionCookie": { "type": "apiKey", "in": "cookie", "name": "owl_invitation_session" }
     },
     "schemas": {
       "Error": {
@@ -113,10 +114,10 @@
       },
       "Event": {
         "type": "object",
-        "required": ["id", "organizerId", "title", "description", "eventDate", "location", "timezone", "retentionDays", "status", "shareToken", "contactRequirement", "showHeadcount", "showGuestList", "waitlistEnabled", "commentsEnabled", "seriesOverride", "createdAt", "updatedAt"],
+        "required": ["id", "organizerId", "title", "description", "eventDate", "location", "timezone", "retentionDays", "status", "showHeadcount", "showGuestList", "seriesOverride", "createdAt", "updatedAt"],
         "properties": {
           "id": { "type": "string", "format": "uuid" },
-          "organizerId": { "type": "string", "format": "uuid", "deprecated": true },
+          "organizerId": { "type": "string", "format": "uuid", "description": "Owner user derived from the authoritative event_memberships row." },
           "title": { "type": "string" },
           "description": { "type": "string" },
           "eventDate": { "type": "string", "format": "date-time" },
@@ -125,14 +126,9 @@
           "timezone": { "type": "string" },
           "retentionDays": { "type": "integer" },
           "status": { "type": "string", "enum": ["draft", "published", "cancelled", "archived"] },
-          "shareToken": { "type": "string" },
-          "contactRequirement": { "type": "string", "enum": ["email", "phone", "email_or_phone", "email_and_phone"] },
           "showHeadcount": { "type": "boolean" },
           "showGuestList": { "type": "boolean" },
           "rsvpDeadline": { "type": "string", "format": "date-time" },
-          "maxCapacity": { "type": "integer" },
-          "waitlistEnabled": { "type": "boolean" },
-          "commentsEnabled": { "type": "boolean" },
           "seriesId": { "type": "string", "format": "uuid" },
           "seriesIndex": { "type": "integer" },
           "seriesOverride": { "type": "boolean" },
@@ -152,6 +148,193 @@
           "email": { "type": "string", "format": "email" },
           "name": { "type": "string" },
           "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Invitation": {
+        "type": "object",
+        "required": ["id", "eventId", "label", "preferredDeliveryMethod", "additionalGuestAllowance", "source", "tokenVersion", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "label": { "type": "string", "maxLength": 200 },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" },
+          "preferredDeliveryMethod": { "type": "string", "enum": ["email", "sms", "none"], "description": "Stored contact preference. Gate 2 sends household capabilities and recovery only when this value is email." },
+          "additionalGuestAllowance": { "type": "integer", "minimum": 0 },
+          "source": { "type": "string", "enum": ["private", "open"] },
+          "tokenVersion": { "type": "integer", "minimum": 1 },
+          "revokedAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InvitationGuest": {
+        "type": "object",
+        "required": ["id", "invitationId", "name", "origin", "attendance"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "invitationId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "origin": { "type": "string", "enum": ["assigned", "additional"] },
+          "attendance": { "type": "string", "enum": ["pending", "attending", "maybe", "declined"] }
+        }
+      },
+      "InvitationQuestion": {
+        "type": "object",
+        "required": ["id", "label", "type", "options", "required", "scope", "sortOrder"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "label": { "type": "string" },
+          "type": { "type": "string", "enum": ["text", "select", "checkbox"] },
+          "options": { "type": "array", "items": { "type": "string" } },
+          "required": { "type": "boolean" },
+          "scope": { "type": "string", "enum": ["invitation", "guest"] },
+          "sortOrder": { "type": "integer" }
+        }
+      },
+      "InvitationHousehold": {
+        "type": "object",
+        "required": ["invitation", "event", "response", "guests", "questions", "invitationAnswers", "guestAnswers"],
+        "properties": {
+          "invitation": { "$ref": "#/components/schemas/Invitation" },
+          "event": { "type": "object", "additionalProperties": true },
+          "response": { "type": "object", "additionalProperties": true },
+          "guests": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationGuest" } },
+          "questions": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationQuestion" } },
+          "invitationAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "guestAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        }
+      },
+      "CreateInvitationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "preferredDeliveryMethod", "additionalGuestAllowance", "assignedGuestNames"],
+        "properties": {
+          "label": { "type": "string", "maxLength": 200 },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" },
+          "preferredDeliveryMethod": { "type": "string", "enum": ["email", "sms", "none"], "description": "SMS and none are metadata-only for manually managed invitations in Gate 2." },
+          "additionalGuestAllowance": { "type": "integer", "minimum": 0, "maximum": 50 },
+          "assignedGuestNames": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "send": { "type": "boolean", "description": "When true, preferredDeliveryMethod must be email and contactEmail must be valid. Creation remains successful if the post-commit email attempt later fails." }
+        }
+      },
+      "InvitationDeliveryResult": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["not_requested", "sent", "failed"] },
+          "warning": { "type": "string", "description": "A nonfatal, capability-free warning when resource persistence succeeded but delivery failed." }
+        }
+      },
+      "CreateInvitationResult": {
+        "type": "object",
+        "required": ["invitation", "guests", "accessUrl", "delivery"],
+        "properties": {
+          "invitation": { "$ref": "#/components/schemas/Invitation" },
+          "guests": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationGuest" } },
+          "accessUrl": { "type": "string", "description": "Private capability URL returned to the organizer. The capability is carried in the URL fragment and is not persisted in plaintext." },
+          "delivery": { "$ref": "#/components/schemas/InvitationDeliveryResult" }
+        }
+      },
+      "InvitationCapabilityRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability"],
+        "properties": { "capability": { "type": "string" } }
+      },
+      "InvitationSubmitRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "assignedGuests", "additionalGuests", "invitationAnswers", "guestAnswers"],
+        "properties": {
+          "version": { "type": "integer", "minimum": 1 },
+          "assignedGuests": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "additionalGuests": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "invitationAnswers": { "type": "object", "additionalProperties": true },
+          "guestAnswers": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "RecoveryRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["eventId", "contact"],
+        "properties": {
+          "eventId": { "type": "string" },
+          "contact": { "type": "string" }
+        }
+      },
+      "OpenEnrollmentConfigRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled", "maxPartySize"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "opensAt": { "type": "string", "format": "date-time" },
+          "closesAt": { "type": "string", "format": "date-time" },
+          "maxPartySize": { "type": "integer", "minimum": 1, "maximum": 50 },
+          "capacity": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "OpenEnrollmentConfig": {
+        "type": "object",
+        "required": ["id", "eventId", "enabled", "maxPartySize", "tokenVersion", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "enabled": { "type": "boolean" },
+          "opensAt": { "type": "string", "format": "date-time" },
+          "closesAt": { "type": "string", "format": "date-time" },
+          "maxPartySize": { "type": "integer", "minimum": 1, "maximum": 50 },
+          "capacity": { "type": "integer", "minimum": 1 },
+          "tokenVersion": { "type": "integer", "minimum": 1 },
+          "revokedAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "OpenEnrollmentResult": {
+        "type": "object",
+        "required": ["config", "accessUrl"],
+        "properties": {
+          "config": { "$ref": "#/components/schemas/OpenEnrollmentConfig" },
+          "accessUrl": { "type": "string", "description": "Open-enrollment capability URL using a fragment." }
+        }
+      },
+      "InvitationMessageRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["recipientGroup", "subject", "body"],
+        "properties": {
+          "recipientGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "subject": { "type": "string", "maxLength": 200 },
+          "body": { "type": "string", "maxLength": 10000 }
+        }
+      },
+      "InvitationMessageResult": {
+        "type": "object",
+        "required": ["sent"],
+        "properties": { "sent": { "type": "integer", "minimum": 0 } }
+      },
+      "OpenEnrollmentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability", "label", "contactEmail", "preferredDeliveryMethod", "guestNames"],
+        "properties": {
+          "capability": { "type": "string" },
+          "label": { "type": "string" },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" },
+          "preferredDeliveryMethod": { "type": "string", "enum": ["email"], "description": "Gate 2 open enrollment is email-only so every new household can receive and recover its durable management capability." },
+          "guestNames": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+        }
+      },
+      "OpenEnrollmentCreateResult": {
+        "type": "object",
+        "required": ["data", "delivery"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/InvitationHousehold" },
+          "delivery": { "$ref": "#/components/schemas/InvitationDeliveryResult" }
         }
       }
     }
@@ -314,6 +497,146 @@
         "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["email"], "properties": { "email": { "type": "string", "format": "email" } } } } } },
         "responses": { "202": { "description": "Account invitation sent" }, "201": { "description": "Membership created" } }
+      }
+    },
+    "/events/{eventId}/invitations": {
+      "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": {
+        "operationId": "listInvitations",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Invitation households for the event", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } } }
+      },
+      "post": {
+        "operationId": "createInvitation",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateInvitationRequest" } } } },
+        "responses": { "201": { "description": "Private invitation created", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/CreateInvitationResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/{invitationId}": {
+      "parameters": [
+        { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+        { "name": "invitationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "get": {
+        "operationId": "getInvitation",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Invitation household", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/{invitationId}/deliver": {
+      "post": {
+        "operationId": "deliverInvitation",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "invitationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "204": { "description": "Delivered to stored destination" } }
+      }
+    },
+    "/events/{eventId}/invitations/{invitationId}/rotate": {
+      "post": {
+        "operationId": "rotateInvitationCapability",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "invitationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "200": { "description": "Rotated capability returned once", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/CreateInvitationResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/{invitationId}/revoke": {
+      "post": {
+        "operationId": "revokeInvitation",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "invitationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "properties": { "reason": { "type": "string", "maxLength": 500 } } } } } },
+        "responses": { "204": { "description": "Invitation and sessions revoked" } }
+      }
+    },
+    "/events/{eventId}/invitations/messages": {
+      "post": {
+        "operationId": "messageInvitationHouseholds",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationMessageRequest" } } } },
+        "responses": { "201": { "description": "One-way invitation broadcast sent", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationMessageResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/open-enrollment": {
+      "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": {
+        "operationId": "getOpenEnrollment",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Open enrollment configuration", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "oneOf": [{ "$ref": "#/components/schemas/OpenEnrollmentResult" }, { "type": "null" }] } } } } } } }
+      },
+      "put": {
+        "operationId": "configureOpenEnrollment",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenEnrollmentConfigRequest" } } } },
+        "responses": { "200": { "description": "Open enrollment configured", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/OpenEnrollmentResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/open-enrollment/rotate": {
+      "post": {
+        "operationId": "rotateOpenEnrollmentCapability",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Open capability rotated", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/OpenEnrollmentResult" } } } } } } }
+      }
+    },
+    "/invitations/exchange": {
+      "post": {
+        "operationId": "exchangeInvitationCapability",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationCapabilityRequest" } } } },
+        "responses": { "200": { "description": "Invitation session created", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } }
+      }
+    },
+    "/invitations/session": {
+      "get": {
+        "operationId": "getInvitationSession",
+        "security": [{ "invitationSessionCookie": [] }],
+        "responses": { "200": { "description": "Current invitation household", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } }
+      }
+    },
+    "/invitations/session/response": {
+      "put": {
+        "operationId": "submitInvitationResponse",
+        "security": [{ "invitationSessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationSubmitRequest" } } } },
+        "responses": { "200": { "description": "Response saved" }, "409": { "description": "Optimistic version conflict" } }
+      }
+    },
+    "/invitations/recovery/request": {
+      "post": {
+        "operationId": "requestInvitationRecovery",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecoveryRequest" } } } },
+        "responses": { "200": { "description": "Generic response regardless of match" } }
+      }
+    },
+    "/invitations/recovery/exchange": {
+      "post": {
+        "operationId": "exchangeInvitationRecovery",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationCapabilityRequest" } } } },
+        "responses": { "200": { "description": "Single-use recovery exchanged for invitation session" } }
+      }
+    },
+    "/invitations/open/inspect": {
+      "post": {
+        "operationId": "inspectOpenEnrollment",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationCapabilityRequest" } } } },
+        "responses": { "200": { "description": "Public event enrollment constraints" }, "404": { "description": "Unavailable without disclosure" } }
+      }
+    },
+    "/invitations/open/enroll": {
+      "post": {
+        "operationId": "enrollOpenInvitation",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenEnrollmentRequest" } } } },
+        "responses": { "201": { "description": "New isolated invitation and session created; post-commit email failure is reported only in delivery", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenEnrollmentCreateResult" } } } }, "409": { "description": "Capacity reached" } }
       }
     }
   }

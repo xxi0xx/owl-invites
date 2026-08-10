@@ -22,15 +22,13 @@ func createParentEvent(t *testing.T, ctx context.Context, db database.DB, eventI
 	now := time.Now().UTC().Format(time.RFC3339)
 	orgID := uuid.Must(uuid.NewV7()).String()
 
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO organizers (id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		orgID, "test-"+orgID[:8]+"@example.com", "Test Organizer", now, now)
-	require.NoError(t, err)
+	testutil.SeedUser(t, db, orgID, "test-"+orgID[:8]+"@example.com", "Test Organizer")
 
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, event_date, status, share_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, orgID, "Test Event", "2026-06-15T14:00:00Z", "published", "share-"+eventID[:8], now, now)
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO events (id, title, event_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, "Test Event", "2026-06-15T14:00:00Z", "published", now, now)
 	require.NoError(t, err)
+	testutil.SeedEventOwner(t, db, eventID, orgID)
 }
 
 func TestWebhookStore_CreateAndFindByID(t *testing.T) {
@@ -46,7 +44,7 @@ func TestWebhookStore_CreateAndFindByID(t *testing.T) {
 		EventID:     eventID,
 		URL:         "https://example.com/hook",
 		Secret:      "whsec_test",
-		EventTypes:  []string{"rsvp.created"},
+		EventTypes:  []string{"event.published"},
 		Description: "Test webhook",
 		Enabled:     true,
 	}
@@ -59,7 +57,7 @@ func TestWebhookStore_CreateAndFindByID(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, found)
 	assert.Equal(t, "https://example.com/hook", found.URL)
-	assert.Equal(t, []string{"rsvp.created"}, found.EventTypes)
+	assert.Equal(t, []string{"event.published"}, found.EventTypes)
 	assert.True(t, found.Enabled)
 }
 
@@ -77,7 +75,7 @@ func TestWebhookStore_FindByEventID(t *testing.T) {
 			EventID:    eventID,
 			URL:        "https://example.com/hook",
 			Secret:     "whsec_test",
-			EventTypes: []string{"rsvp.created"},
+			EventTypes: []string{"event.published"},
 			Enabled:    true,
 		}
 		require.NoError(t, store.CreateWebhook(ctx, w))
@@ -96,27 +94,27 @@ func TestWebhookStore_FindEnabledByEventAndType(t *testing.T) {
 	eventID := uuid.Must(uuid.NewV7()).String()
 	createParentEvent(t, ctx, db, eventID)
 
-	// Enabled webhook subscribed to rsvp.created.
+	// Enabled webhook subscribed to event.published.
 	w1 := &Webhook{
 		ID: uuid.Must(uuid.NewV7()).String(), EventID: eventID, URL: "https://example.com/1",
-		Secret: "whsec_1", EventTypes: []string{"rsvp.created"}, Enabled: true,
+		Secret: "whsec_1", EventTypes: []string{"event.published"}, Enabled: true,
 	}
-	// Disabled webhook subscribed to rsvp.created.
+	// Disabled webhook subscribed to event.published.
 	w2 := &Webhook{
 		ID: uuid.Must(uuid.NewV7()).String(), EventID: eventID, URL: "https://example.com/2",
-		Secret: "whsec_2", EventTypes: []string{"rsvp.created"}, Enabled: false,
+		Secret: "whsec_2", EventTypes: []string{"event.published"}, Enabled: false,
 	}
 	// Enabled webhook subscribed to a different type.
 	w3 := &Webhook{
 		ID: uuid.Must(uuid.NewV7()).String(), EventID: eventID, URL: "https://example.com/3",
-		Secret: "whsec_3", EventTypes: []string{"event.published"}, Enabled: true,
+		Secret: "whsec_3", EventTypes: []string{"event.cancelled"}, Enabled: true,
 	}
 
 	require.NoError(t, store.CreateWebhook(ctx, w1))
 	require.NoError(t, store.CreateWebhook(ctx, w2))
 	require.NoError(t, store.CreateWebhook(ctx, w3))
 
-	webhooks, err := store.FindEnabledByEventAndType(ctx, eventID, "rsvp.created")
+	webhooks, err := store.FindEnabledByEventAndType(ctx, eventID, "event.published")
 	require.NoError(t, err)
 	assert.Len(t, webhooks, 1)
 	assert.Equal(t, w1.ID, webhooks[0].ID)
@@ -132,7 +130,7 @@ func TestWebhookStore_UpdateAndDelete(t *testing.T) {
 
 	w := &Webhook{
 		ID: uuid.Must(uuid.NewV7()).String(), EventID: eventID, URL: "https://example.com/hook",
-		Secret: "whsec_test", EventTypes: []string{"rsvp.created"}, Enabled: true,
+		Secret: "whsec_test", EventTypes: []string{"event.published"}, Enabled: true,
 	}
 	require.NoError(t, store.CreateWebhook(ctx, w))
 
@@ -165,7 +163,7 @@ func TestWebhookStore_CountByEvent(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		w := &Webhook{
 			ID: uuid.Must(uuid.NewV7()).String(), EventID: eventID, URL: "https://example.com/hook",
-			Secret: "whsec_test", EventTypes: []string{"rsvp.created"}, Enabled: true,
+			Secret: "whsec_test", EventTypes: []string{"event.published"}, Enabled: true,
 		}
 		require.NoError(t, store.CreateWebhook(ctx, w))
 	}
@@ -195,22 +193,22 @@ func TestWebhookStore_MultipleEventTypes(t *testing.T) {
 
 	w := &Webhook{
 		ID: uuid.Must(uuid.NewV7()).String(), EventID: eventID, URL: "https://example.com/hook",
-		Secret: "whsec_test", EventTypes: []string{"rsvp.created", "rsvp.updated", "event.published"}, Enabled: true,
+		Secret: "whsec_test", EventTypes: []string{"event.published", "event.cancelled"}, Enabled: true,
 	}
 	require.NoError(t, store.CreateWebhook(ctx, w))
 
-	// Should match for rsvp.created.
-	webhooks, err := store.FindEnabledByEventAndType(ctx, eventID, "rsvp.created")
-	require.NoError(t, err)
-	assert.Len(t, webhooks, 1)
-
 	// Should match for event.published.
-	webhooks, err = store.FindEnabledByEventAndType(ctx, eventID, "event.published")
+	webhooks, err := store.FindEnabledByEventAndType(ctx, eventID, "event.published")
 	require.NoError(t, err)
 	assert.Len(t, webhooks, 1)
 
-	// Should not match for comment.created.
-	webhooks, err = store.FindEnabledByEventAndType(ctx, eventID, "comment.created")
+	// Should match for event.cancelled.
+	webhooks, err = store.FindEnabledByEventAndType(ctx, eventID, "event.cancelled")
+	require.NoError(t, err)
+	assert.Len(t, webhooks, 1)
+
+	// Should not match for unsupported.event.
+	webhooks, err = store.FindEnabledByEventAndType(ctx, eventID, "unsupported.event")
 	require.NoError(t, err)
 	assert.Len(t, webhooks, 0)
 }
@@ -225,14 +223,14 @@ func TestWebhookStore_Deliveries(t *testing.T) {
 
 	w := &Webhook{
 		ID: uuid.Must(uuid.NewV7()).String(), EventID: eventID, URL: "https://example.com/hook",
-		Secret: "whsec_test", EventTypes: []string{"rsvp.created"}, Enabled: true,
+		Secret: "whsec_test", EventTypes: []string{"event.published"}, Enabled: true,
 	}
 	require.NoError(t, store.CreateWebhook(ctx, w))
 
 	d := &Delivery{
 		ID:        uuid.Must(uuid.NewV7()).String(),
 		WebhookID: w.ID,
-		EventType: "rsvp.created",
+		EventType: "event.published",
 		Payload:   `{"test": true}`,
 		Attempt:   1,
 	}
@@ -269,7 +267,7 @@ func TestWebhookService_CreateWebhook(t *testing.T) {
 
 	result, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:         "https://example.com/hook",
-		EventTypes:  []string{"rsvp.created", "rsvp.updated"},
+		EventTypes:  []string{"event.published", "event.cancelled"},
 		Description: "My webhook",
 	})
 	require.NoError(t, err)
@@ -292,7 +290,7 @@ func TestWebhookService_CreateWebhook_InvalidURL(t *testing.T) {
 
 	_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "ftp://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid webhook URL")
@@ -349,7 +347,7 @@ func TestWebhookService_RotateSecret(t *testing.T) {
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.NoError(t, err)
 
@@ -371,7 +369,7 @@ func TestWebhookService_UpdateWebhook(t *testing.T) {
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.NoError(t, err)
 
@@ -399,7 +397,7 @@ func TestWebhookService_DeleteWebhook(t *testing.T) {
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.NoError(t, err)
 
@@ -426,7 +424,7 @@ func TestWebhookService_MaxWebhooksPerEvent(t *testing.T) {
 	for i := 0; i < maxWebhooksPerEvent; i++ {
 		_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 			URL:        "https://example.com/hook",
-			EventTypes: []string{"rsvp.created"},
+			EventTypes: []string{"event.published"},
 		})
 		require.NoError(t, err)
 	}
@@ -434,7 +432,7 @@ func TestWebhookService_MaxWebhooksPerEvent(t *testing.T) {
 	// Next one should fail.
 	_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "maximum")
@@ -461,7 +459,7 @@ func TestWebhookService_ListByEvent(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 			URL:        "https://example.com/hook",
-			EventTypes: []string{"rsvp.created"},
+			EventTypes: []string{"event.published"},
 		})
 		require.NoError(t, err)
 	}
@@ -484,7 +482,7 @@ func TestWebhookService_GetDeliveries_Empty(t *testing.T) {
 
 	created, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.NoError(t, err)
 
@@ -581,7 +579,7 @@ func TestWebhookService_CreateWebhook_RequireHTTPS(t *testing.T) {
 	// http:// is rejected in production mode.
 	_, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "http://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "https")
@@ -589,7 +587,7 @@ func TestWebhookService_CreateWebhook_RequireHTTPS(t *testing.T) {
 	// https:// is accepted in production mode.
 	result, err := svc.CreateWebhook(ctx, eventID, CreateWebhookRequest{
 		URL:        "https://example.com/hook",
-		EventTypes: []string{"rsvp.created"},
+		EventTypes: []string{"event.published"},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "https://example.com/hook", result.URL)

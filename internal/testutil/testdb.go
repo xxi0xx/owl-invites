@@ -50,10 +50,21 @@ func (t *testDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (database.Tx,
 // the production database.New constructor (exercising the real postgresDB and
 // its placeholder rewriter), isolating each test in its own unique schema.
 func NewTestDB(t *testing.T) database.DB {
+	return newTestDB(t, nil)
+}
+
+// NewTestDBAtVersion creates the same isolated database as NewTestDB but stops
+// at an exact schema version. Tests can seed legacy data and then call
+// database.RunMigrations to exercise a real upgrade on either engine.
+func NewTestDBAtVersion(t *testing.T, version uint) database.DB {
+	return newTestDB(t, &version)
+}
+
+func newTestDB(t *testing.T, version *uint) database.DB {
 	t.Helper()
 
 	if url := os.Getenv("TEST_DATABASE_URL"); url != "" {
-		return newPostgresTestDB(t, url)
+		return newPostgresTestDB(t, url, version)
 	}
 
 	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=ON")
@@ -66,8 +77,14 @@ func NewTestDB(t *testing.T) database.DB {
 
 	tdb := &testDB{db: db}
 
-	if err := database.RunMigrations(tdb); err != nil {
-		t.Fatalf("run migrations: %v", err)
+	var migrationErr error
+	if version == nil {
+		migrationErr = database.RunMigrations(tdb)
+	} else {
+		migrationErr = database.RunMigrationsTo(tdb, *version)
+	}
+	if migrationErr != nil {
+		t.Fatalf("run migrations: %v", migrationErr)
 	}
 
 	t.Cleanup(func() { _ = tdb.Close() })
@@ -88,7 +105,7 @@ func NewTestDB(t *testing.T) database.DB {
 //   - Run migrations on the scoped connection.
 //   - On cleanup, DROP SCHEMA ... CASCADE via the bootstrap connection and
 //     close both handles.
-func newPostgresTestDB(t *testing.T, baseURL string) database.DB {
+func newPostgresTestDB(t *testing.T, baseURL string, version *uint) database.DB {
 	t.Helper()
 
 	schema := "test_" + strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
@@ -132,11 +149,17 @@ func newPostgresTestDB(t *testing.T, baseURL string) database.DB {
 	scoped.Underlying().SetMaxOpenConns(4)
 	scoped.Underlying().SetMaxIdleConns(2)
 
-	if err := database.RunMigrations(scoped); err != nil {
+	var migrationErr error
+	if version == nil {
+		migrationErr = database.RunMigrations(scoped)
+	} else {
+		migrationErr = database.RunMigrationsTo(scoped, *version)
+	}
+	if migrationErr != nil {
 		_ = scoped.Close()
 		_, _ = bootstrap.Exec("DROP SCHEMA " + schema + " CASCADE")
 		_ = bootstrap.Close()
-		t.Fatalf("run migrations: %v", err)
+		t.Fatalf("run migrations: %v", migrationErr)
 	}
 
 	t.Cleanup(func() {
@@ -171,6 +194,9 @@ func TestConfig() *config.Config {
 		MagicLinkExpiry:           15 * time.Minute,
 		SessionExpiry:             168 * time.Hour,
 		AccountInviteExpiry:       72 * time.Hour,
+		InvitationSessionExpiry:   30 * 24 * time.Hour,
+		InvitationRecoveryExpiry:  15 * time.Minute,
+		InvitationSecretKey:       "test-only-owl-invites-secret-key-32-bytes",
 		BaseURL:                   "http://localhost:8080",
 		NotificationEmailProvider: "smtp",
 		SMTPHost:                  "localhost",

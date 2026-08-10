@@ -21,16 +21,13 @@ func seedEvent(t *testing.T, ctx context.Context, db database.DB) string {
 	orgID := uuid.Must(uuid.NewV7()).String()
 	eventID := uuid.Must(uuid.NewV7()).String()
 
+	testutil.SeedUser(t, db, orgID, "test-"+orgID+"@example.com", "Test Organizer")
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO organizers (id, email, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		orgID, "test-"+orgID+"@example.com", "Test Organizer", now, now); err != nil {
-		t.Fatalf("seed organizer: %v", err)
-	}
-	if _, err := db.ExecContext(ctx,
-		`INSERT INTO events (id, organizer_id, title, event_date, status, share_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, orgID, "Test Event", "2026-06-15T14:00:00Z", "published", "share-"+eventID, now, now); err != nil {
+		`INSERT INTO events (id, title, event_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, "Test Event", "2026-06-15T14:00:00Z", "published", now, now); err != nil {
 		t.Fatalf("seed event: %v", err)
 	}
+	testutil.SeedEventOwner(t, db, eventID, orgID)
 	return eventID
 }
 

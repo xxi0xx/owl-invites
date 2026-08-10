@@ -33,7 +33,7 @@ func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
 			h.Set("X-Frame-Options", "DENY")
 			// Capability URLs introduced by Owl Invites must never be forwarded as
 			// referrers. Applying the stricter policy globally also protects current
-			// magic-link and RSVP-token routes.
+			// magic-link and capability exchange routes.
 			h.Set("Referrer-Policy", "no-referrer")
 			h.Set("Cross-Origin-Opener-Policy", "same-origin")
 			if isSecureRequest(r) {

@@ -126,7 +126,7 @@
 					{/if}
 				</button>
 				<p class="text-neutral-400 text-xs mt-4">
-					Changed your mind later? You can re-subscribe by RSVPing again or contacting the event organizer.
+					Changed your mind later? Contact the event organizer to restore delivery for your invitation.
 				</p>
 			{:else if view === 'success'}
 				<div class="w-16 h-16 rounded-full bg-success-light flex items-center justify-center mx-auto mb-4">
@@ -143,7 +143,7 @@
 					{/if}
 				</p>
 				<p class="text-neutral-400 text-xs mt-4">
-					You can re-subscribe at any time by RSVPing again or contacting the event organizer.
+					Contact the event organizer to restore delivery for your invitation.
 				</p>
 			{:else if view === 'error'}
 				<div class="w-16 h-16 rounded-full bg-error-light flex items-center justify-center mx-auto mb-4">

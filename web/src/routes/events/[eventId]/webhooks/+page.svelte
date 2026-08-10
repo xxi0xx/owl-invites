@@ -15,10 +15,6 @@
 	const eventId = $derived($page.params.eventId);
 
 	const EVENT_TYPES = [
-		'rsvp.created',
-		'rsvp.updated',
-		'rsvp.cancelled',
-		'attendee.checked_in',
 		'event.published',
 		'event.cancelled'
 	];
@@ -120,7 +116,10 @@
 		editingWebhook = webhook;
 		editUrl = webhook.url;
 		editDescription = webhook.description;
-		editEventTypes = [...webhook.eventTypes];
+		// Older installations may contain subscriptions for retired RSVP or
+		// guestbook events. They are inert in Gate 2 and must not be sent back as
+		// if they were still supported.
+		editEventTypes = webhook.eventTypes.filter((eventType) => EVENT_TYPES.includes(eventType));
 		editEnabled = webhook.enabled;
 	}
 

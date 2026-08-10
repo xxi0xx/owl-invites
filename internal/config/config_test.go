@@ -9,6 +9,7 @@ import (
 )
 
 func TestLoadNotificationProviderEnv(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("PORT", "9090")
 	t.Setenv("ENV", "development")
 	t.Setenv("DB_DRIVER", "sqlite")
@@ -34,6 +35,7 @@ func TestLoadNotificationProviderEnv(t *testing.T) {
 }
 
 func TestLoadSESEnv(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("PORT", "8080")
 	t.Setenv("ENV", "production")
 	t.Setenv("DB_DRIVER", "sqlite")
@@ -55,6 +57,7 @@ func TestLoadSESEnv(t *testing.T) {
 }
 
 func TestAllowSignupsDefaultsOff(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("ALLOW_SIGNUPS", "")
 
 	cfg, err := Load()
@@ -63,6 +66,7 @@ func TestAllowSignupsDefaultsOff(t *testing.T) {
 }
 
 func TestAllowSignupsCanBeExplicitlyEnabled(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("ALLOW_SIGNUPS", "true")
 
 	cfg, err := Load()
@@ -71,6 +75,7 @@ func TestAllowSignupsCanBeExplicitlyEnabled(t *testing.T) {
 }
 
 func TestBootstrapTokenUsesOwlInvitesEnvironmentKey(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("OWL_INVITES_BOOTSTRAP_TOKEN", "operator-secret")
 
 	cfg, err := Load()
@@ -79,6 +84,7 @@ func TestBootstrapTokenUsesOwlInvitesEnvironmentKey(t *testing.T) {
 }
 
 func TestAccountInviteExpiryUsesOwlInvitesEnvironmentKey(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("OWL_INVITES_ACCOUNT_INVITE_EXPIRY", "48h")
 
 	cfg, err := Load()
@@ -87,6 +93,7 @@ func TestAccountInviteExpiryUsesOwlInvitesEnvironmentKey(t *testing.T) {
 }
 
 func TestTrustedProxiesRejectsInvalidEntries(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("TRUSTED_PROXIES", "not-a-network")
 
 	_, err := Load()
@@ -95,9 +102,22 @@ func TestTrustedProxiesRejectsInvalidEntries(t *testing.T) {
 }
 
 func TestTrustedProxiesAcceptsIPsAndCIDRs(t *testing.T) {
+	setInvitationSecret(t)
 	t.Setenv("TRUSTED_PROXIES", "127.0.0.1, 10.0.0.0/8, 2001:db8::/32")
 
 	cfg, err := Load()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"127.0.0.1", "10.0.0.0/8", "2001:db8::/32"}, cfg.TrustedProxies)
+}
+
+func TestInvitationSecretIsRequiredRestoreMaterial(t *testing.T) {
+	t.Setenv("OWL_INVITES_SECRET_KEY", "short")
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "OWL_INVITES_SECRET_KEY")
+}
+
+func setInvitationSecret(t *testing.T) {
+	t.Helper()
+	t.Setenv("OWL_INVITES_SECRET_KEY", "test-only-owl-invites-secret-key-32-bytes")
 }

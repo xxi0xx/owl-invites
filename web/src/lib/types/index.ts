@@ -18,11 +18,9 @@ export interface EventSeries {
 	maxOccurrences?: number;
 	seriesStatus: 'active' | 'stopped';
 	retentionDays: number;
-	contactRequirement: 'email' | 'phone' | 'email_or_phone' | 'email_and_phone';
 	showHeadcount: boolean;
 	showGuestList: boolean;
 	rsvpDeadlineOffsetHours?: number;
-	maxCapacity?: number;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -42,34 +40,6 @@ export interface InviteCard {
 	updatedAt: string;
 }
 
-export interface Attendee {
-	id: string;
-	eventId: string;
-	name: string;
-	email?: string;
-	phone?: string;
-	rsvpStatus: 'pending' | 'attending' | 'maybe' | 'declined' | 'waitlisted';
-	rsvpToken: string;
-	contactMethod: 'email' | 'sms';
-	dietaryNotes: string;
-	plusOnes: number;
-	createdAt: string;
-	updatedAt: string;
-}
-
-export interface Message {
-	id: string;
-	eventId: string;
-	senderType: 'organizer' | 'attendee';
-	senderId: string;
-	recipientType: 'organizer' | 'attendee' | 'group';
-	recipientId: string;
-	subject: string;
-	body: string;
-	readAt?: string;
-	createdAt: string;
-}
-
 export interface Reminder {
 	id: string;
 	eventId: string;
@@ -79,40 +49,6 @@ export interface Reminder {
 	status: 'scheduled' | 'sent' | 'cancelled' | 'failed';
 	createdAt: string;
 	updatedAt: string;
-}
-
-export interface RSVPStats {
-	attending: number;
-	attendingHeadcount: number;
-	maybe: number;
-	maybeHeadcount: number;
-	declined: number;
-	pending: number;
-	waitlisted: number;
-	total: number;
-	totalHeadcount: number;
-}
-
-export interface PublicEvent {
-	title: string;
-	description: string;
-	eventDate: string;
-	endDate?: string;
-	location: string;
-	timezone: string;
-	contactRequirement: 'email' | 'phone' | 'email_or_phone' | 'email_and_phone';
-	rsvpDeadline?: string;
-	rsvpsClosed: boolean;
-	maxCapacity?: number;
-	spotsLeft?: number;
-	atCapacity: boolean;
-	waitlistEnabled: boolean;
-	commentsEnabled: boolean;
-}
-
-export interface PublicAttendance {
-	headcount: number;
-	names?: string[];
 }
 
 export type CoHost = Omit<EventMembership, 'role'> & {
@@ -145,18 +81,65 @@ export interface EventQuestion {
 	type: 'text' | 'select' | 'checkbox';
 	options: string[];
 	required: boolean;
+	scope: 'invitation' | 'guest';
 	sortOrder: number;
 	createdAt: string;
 	updatedAt: string;
 }
 
-export interface QuestionAnswer {
+export type InvitationAttendance = 'pending' | 'attending' | 'maybe' | 'declined';
+
+export interface InvitationGuest {
 	id: string;
-	attendeeId: string;
-	questionId: string;
-	answer: string;
+	invitationId: string;
+	name: string;
+	origin: 'assigned' | 'additional';
+	sortOrder: number;
+	attendance: InvitationAttendance;
+}
+
+export interface InvitationRecord {
+	id: string;
+	eventId: string;
+	label: string;
+	contactEmail?: string;
+	contactPhone?: string;
+	preferredDeliveryMethod: 'email' | 'sms' | 'none';
+	additionalGuestAllowance: number;
+	source: 'private' | 'open';
+	tokenVersion: number;
+	revokedAt?: string;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export interface InvitationQuestion {
+	id: string;
+	label: string;
+	type: 'text' | 'select' | 'checkbox';
+	options: string[];
+	required: boolean;
+	scope: 'invitation' | 'guest';
+	sortOrder: number;
+}
+
+export interface InvitationHousehold {
+	invitation: InvitationRecord;
+	event: {
+		id: string;
+		title: string;
+		description: string;
+		eventDate: string;
+		endDate?: string;
+		location: string;
+		timezone: string;
+		status: string;
+	};
+	response: { id: string; invitationId: string; version: number; submittedAt?: string };
+	guests: InvitationGuest[];
+	questions: InvitationQuestion[];
+	invitationAnswers: Array<{ questionId: string; answer: string }>;
+	guestAnswers: Array<{ guestId: string; questionId: string; answer: string }>;
 }
 
 export type InviteTemplate = {
@@ -165,28 +148,6 @@ export type InviteTemplate = {
 	description: string;
 	previewImage: string;
 };
-
-export interface PublicComment {
-	id: string;
-	authorName: string;
-	body: string;
-	createdAt: string;
-}
-
-export interface EventComment {
-	id: string;
-	eventId: string;
-	attendeeId: string;
-	authorName: string;
-	body: string;
-	createdAt: string;
-}
-
-export interface PaginatedComments {
-	comments: PublicComment[];
-	hasMore: boolean;
-	nextCursor?: string;
-}
 
 export interface Webhook {
 	id: string;
@@ -217,32 +178,6 @@ export interface WebhookDelivery {
 	createdAt: string;
 }
 
-export interface CSVImportRow {
-	name: string;
-	email: string;
-	phone: string;
-	dietaryNotes: string;
-	plusOnes: number;
-	error?: string;
-	duplicate?: boolean;
-}
-
-export interface CSVPreviewResponse {
-	rows: CSVImportRow[];
-	totalRows: number;
-	validRows: number;
-	errorRows: number;
-	duplicates: number;
-}
-
-export interface CSVImportResult {
-	imported: number;
-	skipped: number;
-	failed: number;
-	duplicates: number;
-	invited: number;
-}
-
 export interface EmailStats {
 	totalSent: number;
 	delivered: number;
@@ -262,22 +197,20 @@ export interface InstanceStats {
 		cancelled: number;
 		archived: number;
 	};
-	attendees: {
+	guests: {
 		total: number;
 		totalHeadcount: number;
 		attending: number;
 		maybe: number;
 		declined: number;
 		pending: number;
-		waitlisted: number;
 		avgPerEvent: number;
 	};
-	organizers: {
+	users: {
 		total: number;
 	};
 	features: {
-		waitlistEvents: number;
-		commentsEnabledEvents: number;
+		openEnrollmentEvents: number;
 		cohostedEvents: number;
 		eventsWithQuestions: number;
 		eventsWithCapacity: number;
@@ -297,7 +230,7 @@ export interface InstanceStats {
 export interface NotificationLogEntry {
 	id: string;
 	eventId: string;
-	attendeeId: string;
+	invitationId: string;
 	channel: string;
 	provider: string;
 	status: string;

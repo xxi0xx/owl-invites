@@ -4,12 +4,8 @@ import "time"
 
 // ValidEventTypes enumerates the webhook event types that can be subscribed to.
 var ValidEventTypes = map[string]bool{
-	"rsvp.created":     true,
-	"rsvp.updated":     true,
-	"event.published":  true,
-	"event.cancelled":  true,
-	"reminder.sent":    true,
-	"comment.created":  true,
+	"event.published": true,
+	"event.cancelled": true,
 }
 
 // Webhook represents a registered webhook endpoint for an event.

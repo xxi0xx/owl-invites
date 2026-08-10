@@ -81,15 +81,16 @@ func (j *CleanupJob) Run(ctx context.Context) error {
 // and logs a warning. It only warns for events that haven't been warned yet
 // (tracked in memory). If a retention notification callback is set, it also
 // sends an email to the organizer. The event status is NOT changed, so
-// published events remain fully functional for RSVPs.
+// published events remain fully functional for invitation responses.
 func (j *CleanupJob) warnExpiring(ctx context.Context) error {
 	now := time.Now().UTC()
 
 	// Find events nearing their retention deadline (within 7 days).
 	rows, err := j.db.QueryContext(ctx,
-		`SELECT e.id, e.title, e.event_date, e.retention_days, o.email
+		`SELECT e.id, e.title, e.event_date, e.retention_days, u.email
 		 FROM events e
-		 JOIN organizers o ON o.id = e.organizer_id
+		 JOIN event_memberships owner ON owner.event_id = e.id AND owner.role = 'owner'
+		 JOIN users u ON u.id = owner.user_id
 		 WHERE e.status != 'archived'`,
 	)
 	if err != nil {

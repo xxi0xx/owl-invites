@@ -30,13 +30,13 @@ func (s *SeriesStore) Create(ctx context.Context, es *EventSeries) error {
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO event_series (id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO event_series (id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, show_headcount, show_guest_list, rsvp_deadline_offset_hours, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		es.ID, es.OrganizerID, es.Title, es.Description, es.Location, es.Timezone,
 		es.EventTime, es.DurationMinutes, es.RecurrenceRule, recurrenceEnd,
-		es.MaxOccurrences, es.SeriesStatus, es.RetentionDays, es.ContactRequirement,
+		es.MaxOccurrences, es.SeriesStatus, es.RetentionDays,
 		boolToInt(es.ShowHeadcount), boolToInt(es.ShowGuestList),
-		es.RSVPDeadlineOffsetHours, es.MaxCapacity, now, now,
+		es.RSVPDeadlineOffsetHours, now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("create event series: %w", err)
@@ -52,7 +52,7 @@ func (s *SeriesStore) Create(ctx context.Context, es *EventSeries) error {
 // FindByID retrieves an event series by its ID.
 func (s *SeriesStore) FindByID(ctx context.Context, id string) (*EventSeries, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
+		`SELECT id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, show_headcount, show_guest_list, rsvp_deadline_offset_hours, created_at, updated_at
 		 FROM event_series WHERE id = ?`, id,
 	)
 	return scanSeries(row)
@@ -61,8 +61,8 @@ func (s *SeriesStore) FindByID(ctx context.Context, id string) (*EventSeries, er
 // FindByOrganizerID retrieves all event series belonging to an organizer.
 func (s *SeriesStore) FindByOrganizerID(ctx context.Context, organizerID string) ([]*EventSeries, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
-		 FROM event_series WHERE organizer_id = ? ORDER BY created_at DESC`, organizerID,
+		`SELECT id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, show_headcount, show_guest_list, rsvp_deadline_offset_hours, created_at, updated_at
+		 FROM event_series WHERE owner_user_id = ? ORDER BY created_at DESC`, organizerID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find series by organizer: %w", err)
@@ -87,7 +87,7 @@ func (s *SeriesStore) FindByOrganizerID(ctx context.Context, organizerID string)
 // FindAllActive retrieves all active event series.
 func (s *SeriesStore) FindAllActive(ctx context.Context) ([]*EventSeries, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, organizer_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, contact_requirement, show_headcount, show_guest_list, rsvp_deadline_offset_hours, max_capacity, created_at, updated_at
+		`SELECT id, owner_user_id, title, description, location, timezone, event_time, duration_minutes, recurrence_rule, recurrence_end, max_occurrences, series_status, retention_days, show_headcount, show_guest_list, rsvp_deadline_offset_hours, created_at, updated_at
 		 FROM event_series WHERE series_status = 'active'`,
 	)
 	if err != nil {
@@ -121,13 +121,13 @@ func (s *SeriesStore) Update(ctx context.Context, es *EventSeries) error {
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE event_series SET title = ?, description = ?, location = ?, timezone = ?, event_time = ?, duration_minutes = ?, recurrence_rule = ?, recurrence_end = ?, max_occurrences = ?, series_status = ?, retention_days = ?, contact_requirement = ?, show_headcount = ?, show_guest_list = ?, rsvp_deadline_offset_hours = ?, max_capacity = ?, updated_at = ?
+		`UPDATE event_series SET title = ?, description = ?, location = ?, timezone = ?, event_time = ?, duration_minutes = ?, recurrence_rule = ?, recurrence_end = ?, max_occurrences = ?, series_status = ?, retention_days = ?, show_headcount = ?, show_guest_list = ?, rsvp_deadline_offset_hours = ?, updated_at = ?
 		 WHERE id = ?`,
 		es.Title, es.Description, es.Location, es.Timezone,
 		es.EventTime, es.DurationMinutes, es.RecurrenceRule, recurrenceEnd,
-		es.MaxOccurrences, es.SeriesStatus, es.RetentionDays, es.ContactRequirement,
+		es.MaxOccurrences, es.SeriesStatus, es.RetentionDays,
 		boolToInt(es.ShowHeadcount), boolToInt(es.ShowGuestList),
-		es.RSVPDeadlineOffsetHours, es.MaxCapacity, now, es.ID,
+		es.RSVPDeadlineOffsetHours, now, es.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update event series: %w", err)
@@ -159,15 +159,15 @@ func scanSeries(row *sql.Row) (*EventSeries, error) {
 	var es EventSeries
 	var createdAt, updatedAt string
 	var recurrenceEnd sql.NullString
-	var durationMinutes, maxOccurrences, rsvpDeadlineOffset, maxCapacity sql.NullInt64
+	var durationMinutes, maxOccurrences, rsvpDeadlineOffset sql.NullInt64
 	var showHeadcount, showGuestList int
 
 	err := row.Scan(
 		&es.ID, &es.OrganizerID, &es.Title, &es.Description, &es.Location, &es.Timezone,
 		&es.EventTime, &durationMinutes, &es.RecurrenceRule, &recurrenceEnd,
-		&maxOccurrences, &es.SeriesStatus, &es.RetentionDays, &es.ContactRequirement,
+		&maxOccurrences, &es.SeriesStatus, &es.RetentionDays,
 		&showHeadcount, &showGuestList,
-		&rsvpDeadlineOffset, &maxCapacity, &createdAt, &updatedAt,
+		&rsvpDeadlineOffset, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -176,7 +176,7 @@ func scanSeries(row *sql.Row) (*EventSeries, error) {
 		return nil, fmt.Errorf("scan event series: %w", err)
 	}
 
-	return parseSeriesFields(&es, durationMinutes, recurrenceEnd, maxOccurrences, rsvpDeadlineOffset, maxCapacity, showHeadcount, showGuestList, createdAt, updatedAt)
+	return parseSeriesFields(&es, durationMinutes, recurrenceEnd, maxOccurrences, rsvpDeadlineOffset, showHeadcount, showGuestList, createdAt, updatedAt)
 }
 
 // scanSeriesRow scans a single row from sql.Rows into an EventSeries.
@@ -184,25 +184,25 @@ func scanSeriesRow(rows *sql.Rows) (*EventSeries, error) {
 	var es EventSeries
 	var createdAt, updatedAt string
 	var recurrenceEnd sql.NullString
-	var durationMinutes, maxOccurrences, rsvpDeadlineOffset, maxCapacity sql.NullInt64
+	var durationMinutes, maxOccurrences, rsvpDeadlineOffset sql.NullInt64
 	var showHeadcount, showGuestList int
 
 	err := rows.Scan(
 		&es.ID, &es.OrganizerID, &es.Title, &es.Description, &es.Location, &es.Timezone,
 		&es.EventTime, &durationMinutes, &es.RecurrenceRule, &recurrenceEnd,
-		&maxOccurrences, &es.SeriesStatus, &es.RetentionDays, &es.ContactRequirement,
+		&maxOccurrences, &es.SeriesStatus, &es.RetentionDays,
 		&showHeadcount, &showGuestList,
-		&rsvpDeadlineOffset, &maxCapacity, &createdAt, &updatedAt,
+		&rsvpDeadlineOffset, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan event series row: %w", err)
 	}
 
-	return parseSeriesFields(&es, durationMinutes, recurrenceEnd, maxOccurrences, rsvpDeadlineOffset, maxCapacity, showHeadcount, showGuestList, createdAt, updatedAt)
+	return parseSeriesFields(&es, durationMinutes, recurrenceEnd, maxOccurrences, rsvpDeadlineOffset, showHeadcount, showGuestList, createdAt, updatedAt)
 }
 
 // parseSeriesFields parses nullable fields and timestamps into the EventSeries struct.
-func parseSeriesFields(es *EventSeries, durationMinutes sql.NullInt64, recurrenceEnd sql.NullString, maxOccurrences, rsvpDeadlineOffset, maxCapacity sql.NullInt64, showHeadcount, showGuestList int, createdAt, updatedAt string) (*EventSeries, error) {
+func parseSeriesFields(es *EventSeries, durationMinutes sql.NullInt64, recurrenceEnd sql.NullString, maxOccurrences, rsvpDeadlineOffset sql.NullInt64, showHeadcount, showGuestList int, createdAt, updatedAt string) (*EventSeries, error) {
 	var err error
 
 	es.ShowHeadcount = showHeadcount != 0
@@ -229,11 +229,6 @@ func parseSeriesFields(es *EventSeries, durationMinutes sql.NullInt64, recurrenc
 	if rsvpDeadlineOffset.Valid {
 		v := int(rsvpDeadlineOffset.Int64)
 		es.RSVPDeadlineOffsetHours = &v
-	}
-
-	if maxCapacity.Valid {
-		v := int(maxCapacity.Int64)
-		es.MaxCapacity = &v
 	}
 
 	es.CreatedAt, err = time.Parse(time.RFC3339, createdAt)

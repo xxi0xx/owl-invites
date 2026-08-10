@@ -64,14 +64,6 @@ func (s *SeriesService) CreateSeries(ctx context.Context, organizerID string, re
 		retentionDays = *req.RetentionDays
 	}
 
-	contactRequirement := "email"
-	if req.ContactRequirement != nil && *req.ContactRequirement != "" {
-		if !isValidContactRequirement(*req.ContactRequirement) {
-			return nil, errcode.Validationf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
-		}
-		contactRequirement = *req.ContactRequirement
-	}
-
 	showHeadcount := false
 	if req.ShowHeadcount != nil {
 		showHeadcount = *req.ShowHeadcount
@@ -90,10 +82,6 @@ func (s *SeriesService) CreateSeries(ctx context.Context, organizerID string, re
 		recurrenceEnd = &t
 	}
 
-	if req.MaxCapacity != nil && *req.MaxCapacity < 1 {
-		return nil, errcode.Validationf("maxCapacity must be at least 1")
-	}
-
 	series := &EventSeries{
 		ID:                      uuid.Must(uuid.NewV7()).String(),
 		OrganizerID:             organizerID,
@@ -108,11 +96,9 @@ func (s *SeriesService) CreateSeries(ctx context.Context, organizerID string, re
 		MaxOccurrences:          req.MaxOccurrences,
 		SeriesStatus:            "active",
 		RetentionDays:           retentionDays,
-		ContactRequirement:      contactRequirement,
 		ShowHeadcount:           showHeadcount,
 		ShowGuestList:           showGuestList,
 		RSVPDeadlineOffsetHours: req.RSVPDeadlineOffsetHours,
-		MaxCapacity:             req.MaxCapacity,
 	}
 
 	if err := s.seriesStore.Create(ctx, series); err != nil {
@@ -304,12 +290,6 @@ func (s *SeriesService) UpdateSeries(ctx context.Context, seriesID, organizerID 
 	if req.RetentionDays != nil {
 		series.RetentionDays = *req.RetentionDays
 	}
-	if req.ContactRequirement != nil {
-		if !isValidContactRequirement(*req.ContactRequirement) {
-			return nil, errcode.Validationf("invalid contactRequirement: must be email, phone, email_or_phone, or email_and_phone")
-		}
-		series.ContactRequirement = *req.ContactRequirement
-	}
 	if req.ShowHeadcount != nil {
 		series.ShowHeadcount = *req.ShowHeadcount
 	}
@@ -319,16 +299,6 @@ func (s *SeriesService) UpdateSeries(ctx context.Context, seriesID, organizerID 
 	if req.RSVPDeadlineOffsetHours != nil {
 		series.RSVPDeadlineOffsetHours = req.RSVPDeadlineOffsetHours
 	}
-	if req.MaxCapacity != nil {
-		if *req.MaxCapacity == 0 {
-			series.MaxCapacity = nil
-		} else if *req.MaxCapacity < 0 {
-			return nil, errcode.Validationf("maxCapacity must be a positive number, or 0 to remove the limit")
-		} else {
-			series.MaxCapacity = req.MaxCapacity
-		}
-	}
-
 	if err := s.seriesStore.Update(ctx, series); err != nil {
 		return nil, err
 	}
@@ -359,11 +329,8 @@ func (s *SeriesService) updateFutureOccurrences(ctx context.Context, series *Eve
 		ev.Location = series.Location
 		ev.Timezone = series.Timezone
 		ev.RetentionDays = series.RetentionDays
-		ev.ContactRequirement = series.ContactRequirement
 		ev.ShowHeadcount = series.ShowHeadcount
 		ev.ShowGuestList = series.ShowGuestList
-		ev.MaxCapacity = series.MaxCapacity
-		ev.WaitlistEnabled = series.MaxCapacity != nil
 
 		if err := s.eventStore.Update(ctx, ev); err != nil {
 			s.logger.Error().Err(err).Str("event_id", ev.ID).Msg("failed to update series occurrence")
@@ -405,7 +372,7 @@ func (s *SeriesService) StopSeries(ctx context.Context, seriesID, organizerID st
 			continue // Don't cancel individually modified occurrences
 		}
 		// Use the event service Cancel for published events so the onCancel
-		// callback fires and attendees receive cancellation notifications.
+		// callback fires and invitation households receive cancellation notices.
 		if ev.Status == "published" {
 			if _, err := s.eventService.Cancel(ctx, ev.ID, series.OrganizerID, true); err != nil {
 				s.logger.Error().Err(err).Str("event_id", ev.ID).Msg("failed to cancel published series occurrence")
@@ -479,12 +446,6 @@ func (s *SeriesService) DeleteSeries(ctx context.Context, seriesID, organizerID 
 // buildOccurrenceFromSeries creates an Event struct from a series template
 // for the given date and index.
 func (s *SeriesService) buildOccurrenceFromSeries(series *EventSeries, eventDate time.Time, index int) *Event {
-	shareToken, err := generateBase62Token(8)
-	if err != nil {
-		// Extremely unlikely; fall back to a UUID prefix.
-		shareToken = uuid.Must(uuid.NewV7()).String()[:8]
-	}
-
 	var endDate *time.Time
 	if series.DurationMinutes != nil && *series.DurationMinutes > 0 {
 		t := eventDate.Add(time.Duration(*series.DurationMinutes) * time.Minute)
@@ -498,29 +459,23 @@ func (s *SeriesService) buildOccurrenceFromSeries(series *EventSeries, eventDate
 	}
 
 	seriesID := series.ID
-	waitlistEnabled := series.MaxCapacity != nil
-
 	return &Event{
-		ID:                 uuid.Must(uuid.NewV7()).String(),
-		OrganizerID:        series.OrganizerID,
-		Title:              series.Title,
-		Description:        series.Description,
-		EventDate:          eventDate,
-		EndDate:            endDate,
-		Location:           series.Location,
-		Timezone:           series.Timezone,
-		RetentionDays:      series.RetentionDays,
-		Status:             "published",
-		ShareToken:         shareToken,
-		ContactRequirement: series.ContactRequirement,
-		ShowHeadcount:      series.ShowHeadcount,
-		ShowGuestList:      series.ShowGuestList,
-		RSVPDeadline:       rsvpDeadline,
-		MaxCapacity:        series.MaxCapacity,
-		WaitlistEnabled:    waitlistEnabled,
-		SeriesID:           &seriesID,
-		SeriesIndex:        &index,
-		SeriesOverride:     false,
+		ID:             uuid.Must(uuid.NewV7()).String(),
+		OrganizerID:    series.OrganizerID,
+		Title:          series.Title,
+		Description:    series.Description,
+		EventDate:      eventDate,
+		EndDate:        endDate,
+		Location:       series.Location,
+		Timezone:       series.Timezone,
+		RetentionDays:  series.RetentionDays,
+		Status:         "published",
+		ShowHeadcount:  series.ShowHeadcount,
+		ShowGuestList:  series.ShowGuestList,
+		RSVPDeadline:   rsvpDeadline,
+		SeriesID:       &seriesID,
+		SeriesIndex:    &index,
+		SeriesOverride: false,
 	}
 }
 

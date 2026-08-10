@@ -22,6 +22,7 @@ import (
 // routes builds and returns the chi router with all middleware and routes.
 func (s *Server) routes() *chi.Mux {
 	r := chi.NewRouter()
+	r.Use(s.rejectDuringShutdown)
 
 	// --- Middleware ---
 	// Resolve client identity and forwarded scheme before any middleware uses
@@ -157,6 +158,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleHealthReady returns 200 if the database is reachable, 503 otherwise.
 func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
+	if s.shuttingDown.Load() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status": "unavailable",
+			"state":  "shutting_down",
+		})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
@@ -179,6 +189,21 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status":   "ok",
 		"database": "connected",
+	})
+}
+
+func (s *Server) rejectDuringShutdown(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.shuttingDown.Load() || r.URL.Path == "/health" || r.URL.Path == "/health/ready" || r.URL.Path == "/api/v1/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status": "unavailable",
+			"state":  "shutting_down",
+		})
 	})
 }
 

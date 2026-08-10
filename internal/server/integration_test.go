@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -345,4 +346,37 @@ func TestServerIntegration(t *testing.T) {
 			t.Error("expected Retry-After header on 429 response")
 		}
 	})
+}
+
+func TestReadinessDoesNotExposeDatabaseFailure(t *testing.T) {
+	srv, db := newTestServer(t)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := doJSON(srv.http.Handler, http.MethodGet, "/health/ready", nil)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness = %d, want 503: %s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(strings.ToLower(rr.Body.String()), "closed") || strings.Contains(rr.Body.String(), "sql:") {
+		t.Fatalf("readiness leaked database detail: %s", rr.Body.String())
+	}
+}
+
+func TestShutdownStateRejectsNewWorkButKeepsLiveness(t *testing.T) {
+	srv, _ := newTestServer(t)
+	srv.shuttingDown.Store(true)
+
+	ready := doJSON(srv.http.Handler, http.MethodGet, "/health/ready", nil)
+	if ready.Code != http.StatusServiceUnavailable || !strings.Contains(ready.Body.String(), "shutting_down") {
+		t.Fatalf("shutdown readiness = %d %s", ready.Code, ready.Body.String())
+	}
+	work := doJSON(srv.http.Handler, http.MethodGet, "/events", nil)
+	if work.Code != http.StatusServiceUnavailable {
+		t.Fatalf("new work during shutdown = %d, want 503", work.Code)
+	}
+	live := doJSON(srv.http.Handler, http.MethodGet, "/health", nil)
+	if live.Code != http.StatusOK {
+		t.Fatalf("liveness during shutdown = %d, want 200", live.Code)
+	}
 }

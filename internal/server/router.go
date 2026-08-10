@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 
 	apidoc "github.com/yannkr/openrsvp/api"
+	"github.com/yannkr/openrsvp/internal/buildinfo"
 	"github.com/yannkr/openrsvp/internal/security"
 )
 
@@ -143,10 +144,14 @@ func (s *Server) routes() *chi.Mux {
 
 // handleHealth returns a simple 200 OK with status information.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	build := buildinfo.Current()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"status": "ok",
+		"status":     "ok",
+		"version":    build.Version,
+		"commit":     build.Commit,
+		"buildState": build.BuildState,
 	})
 }
 

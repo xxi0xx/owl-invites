@@ -46,6 +46,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
@@ -64,6 +66,7 @@ jobs:
             type=raw,value=${{ needs.validate.outputs.version }}
             type=raw,value=sha-${{ needs.validate.outputs.commit }}
       - name: Build and publish multi-architecture image
+        id: image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -71,8 +74,36 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.validate.outputs.version }}
+            COMMIT=${{ needs.validate.outputs.commit }}
+            BUILD_STATE=clean
+            SOURCE_URL=https://github.com/${{ github.repository }}
+          sbom: true
+          provenance: mode=max
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Attest the published image digest
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Verify published SBOM and provenance
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" \
+            --format '{{ json (index .SBOM "linux/amd64").SPDX }}' \
+            | jq -e '.SPDXID == "SPDXRef-DOCUMENT" and (.packages | length > 0)'
+          gh attestation verify "oci://$IMAGE@$DIGEST" --repo "$GITHUB_REPOSITORY"
+          {
+            echo "### Published Owl Invites image"
+            echo
+            echo "\`$IMAGE@$DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   dry-run:
     name: Release preparation dry run
@@ -91,3 +122,10 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: false
+          build-args: |
+            VERSION=${{ needs.validate.outputs.version }}
+            COMMIT=${{ needs.validate.outputs.commit }}
+            BUILD_STATE=clean
+            SOURCE_URL=https://github.com/${{ github.repository }}
+          sbom: true
+          provenance: mode=max

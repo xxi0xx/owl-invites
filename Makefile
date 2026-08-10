@@ -21,9 +21,9 @@ embed: frontend
 
 build: embed
 	@echo "Building $(BINARY_NAME)..."
-	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) ./scripts/build-go.sh $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
 	@echo "Building $(CLI_NAME) recovery CLI..."
-	CGO_ENABLED=$(CGO_ENABLED) go build -ldflags="-s -w" -o $(BUILD_DIR)/$(CLI_NAME) $(CLI_CMD_DIR)
+	CGO_ENABLED=$(CGO_ENABLED) ./scripts/build-go.sh $(BUILD_DIR)/$(CLI_NAME) $(CLI_CMD_DIR)
 
 dev:
 	@echo "Running in development mode..."

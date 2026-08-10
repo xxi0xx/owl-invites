@@ -67,8 +67,10 @@ jobs:
           fail_ci_if_error: false
       - name: Build server and operator CLI
         run: |
-          go build -o /dev/null ./cmd/openrsvp
-          go build -o /dev/null ./cmd/owl-invites
+          CGO_ENABLED=1 bash scripts/build-go.sh /tmp/openrsvp ./cmd/openrsvp
+          CGO_ENABLED=1 bash scripts/build-go.sh /tmp/owl-invites ./cmd/owl-invites
+          /tmp/openrsvp version --json
+          /tmp/owl-invites version --json
 
   backend-postgres:
     name: Backend (PostgreSQL 16)
@@ -144,7 +146,7 @@ jobs:
           mkdir -p internal/server/frontend
           cp -R web/build/. internal/server/frontend/
           mkdir -p bin
-          go build -o bin/openrsvp ./cmd/openrsvp
+          CGO_ENABLED=1 bash scripts/build-go.sh bin/openrsvp ./cmd/openrsvp
       - name: Start application
         env:
           ENV: development
@@ -219,5 +221,10 @@ jobs:
         with:
           context: .
           push: false
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+            BUILD_STATE=clean
+            SOURCE_URL=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

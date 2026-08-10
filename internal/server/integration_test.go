@@ -129,6 +129,19 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("liveness exposes non-secret build identity", func(t *testing.T) {
+		rr := doJSON(h, http.MethodGet, "/health", nil)
+		var body map[string]string
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"version", "commit", "buildState"} {
+			if body[key] == "" {
+				t.Errorf("health response has empty %s", key)
+			}
+		}
+	})
+
 	t.Run("security headers present on every response", func(t *testing.T) {
 		rr := doJSON(h, http.MethodGet, "/health", nil)
 		want := map[string]string{

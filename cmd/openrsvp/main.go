@@ -2,18 +2,28 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/rs/zerolog"
 
+	"github.com/yannkr/openrsvp/internal/buildinfo"
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/server"
 )
 
 func main() {
+	if handled, err := buildinfo.RunVersionCommand(os.Args[1:], os.Stdout); handled {
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, "openrsvp:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// --- Logger ---
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
 		With().
@@ -31,10 +41,14 @@ func main() {
 		logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
 	}
 
+	build := buildinfo.Current()
 	logger.Info().
 		Str("env", cfg.Env).
 		Str("port", cfg.Port).
 		Str("db_driver", cfg.DBDriver).
+		Str("version", build.Version).
+		Str("commit", build.Commit).
+		Str("build_state", build.BuildState).
 		Msg("starting openrsvp")
 
 	// --- Database ---

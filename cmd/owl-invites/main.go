@@ -5,28 +5,33 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/yannkr/openrsvp/internal/admincli"
 	"github.com/yannkr/openrsvp/internal/auth"
+	"github.com/yannkr/openrsvp/internal/buildinfo"
 	"github.com/yannkr/openrsvp/internal/config"
 	"github.com/yannkr/openrsvp/internal/database"
 	"github.com/yannkr/openrsvp/internal/instanceconfig"
 )
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "owl-invites:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+func run(args []string, stdout, stderr io.Writer) error {
+	if handled, err := buildinfo.RunVersionCommand(args, stdout); handled {
+		return err
+	}
 	if len(args) < 2 || args[0] != "admin" || args[1] != "promote" {
-		return errors.New("usage: owl-invites admin promote --email user@example.com")
+		return errors.New("usage: owl-invites <version [--json] | admin promote --email user@example.com>")
 	}
 	flags := flag.NewFlagSet("admin promote", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
+	flags.SetOutput(stderr)
 	email := flags.String("email", "", "existing user email to activate and promote")
 	if err := flags.Parse(args[2:]); err != nil {
 		return err
@@ -53,6 +58,6 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(os.Stdout, "promoted %s to instance administrator\n", user.Email)
+	_, _ = fmt.Fprintf(stdout, "promoted %s to instance administrator\n", user.Email)
 	return nil
 }

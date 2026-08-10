@@ -104,7 +104,7 @@ func (s *Service) Deliver(ctx context.Context, invitationID string) error {
 	if inv == nil || inv.RevokedAt != nil {
 		return ErrNotFound
 	}
-	if inv.PreferredDeliveryMethod != "email" || inv.ContactEmail == nil {
+	if inv.ContactEmail == nil {
 		return errcode.Validationf("email delivery is not available for this invitation")
 	}
 	if s.sendEmail == nil {
@@ -195,7 +195,10 @@ func (s *Service) ExchangePrivate(ctx context.Context, rawCapability string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	if inv == nil || inv.Source != SourcePrivate || inv.RevokedAt != nil || inv.TokenVersion != version {
+	// Source records how the household was allocated. Every invitation has the
+	// same durable household capability; the separate open-enrollment HMAC
+	// domain can only create a new invitation and cannot pass ParsePrivate.
+	if inv == nil || inv.RevokedAt != nil || inv.TokenVersion != version {
 		return "", nil, ErrInvalidCapability
 	}
 	rawSession, err := randomToken(32)
@@ -428,6 +431,11 @@ func (s *Service) EnrollOpen(ctx context.Context, req OpenEnrollmentRequest) (st
 	household, err := s.store.LoadHousehold(ctx, inv.ID)
 	if err != nil {
 		return "", nil, err
+	}
+	if inv.ContactEmail != nil && s.sendEmail != nil {
+		if err := s.Deliver(ctx, inv.ID); err != nil {
+			return "", nil, err
+		}
 	}
 	return rawSession, household, nil
 }

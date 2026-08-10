@@ -3,6 +3,7 @@ package invitation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -270,6 +271,16 @@ func TestRecoveryIsStoredDestinationOnlyAndSingleUse(t *testing.T) {
 func TestOpenEnrollmentCreatesIsolatedInvitationAndKeepsPrivateContactMatchUntouched(t *testing.T) {
 	f := newServiceFixture(t)
 	private := f.create("Named household", "same@example.com", 0, "Named Guest")
+	var managementRecipient, managementLink string
+	f.service.SetEmailSender(func(_ context.Context, _, _, to, _ string, _ string, plain string) error {
+		managementRecipient = to
+		for _, line := range strings.Split(plain, "\n") {
+			if strings.Contains(line, "/invitation/accept#") {
+				managementLink = line
+			}
+		}
+		return nil
+	})
 	config, accessURL, err := f.service.ConfigureOpen(context.Background(), f.eventID, f.userID,
 		ConfigureOpenRequest{Enabled: true, MaxPartySize: 2, Capacity: intPtr(2)})
 	require.NoError(t, err)
@@ -284,6 +295,34 @@ func TestOpenEnrollmentCreatesIsolatedInvitationAndKeepsPrivateContactMatchUntou
 	assert.NotEmpty(t, session)
 	assert.Equal(t, SourceOpen, openHousehold.Invitation.Source)
 	assert.NotEqual(t, private.Invitation.ID, openHousehold.Invitation.ID)
+	assert.Equal(t, "same@example.com", managementRecipient)
+	assert.NotEmpty(t, managementLink)
+
+	// The open capability stays in its enrollment-only HMAC domain. The
+	// separately emailed household capability selects only the invitation that
+	// this enrollment created, even though a private invitation shares its email.
+	_, _, err = f.service.ExchangePrivate(context.Background(), capabilityFromURL(accessURL))
+	assert.ErrorIs(t, err, ErrInvalidCapability)
+	managementSession, managedOpen, err := f.service.ExchangePrivate(context.Background(), capabilityFromURL(managementLink))
+	require.NoError(t, err)
+	assert.Equal(t, openHousehold.Invitation.ID, managedOpen.Invitation.ID)
+	_, err = f.service.SubmitForSession(context.Background(), managementSession, SubmitRequest{
+		Version: 1,
+		AssignedGuests: []GuestAttendanceInput{{
+			GuestID: private.Guests[0].ID, Attendance: AttendanceAttending,
+		}},
+	})
+	assert.True(t, errcode.IsValidation(err), err)
+	managedOpen, err = f.service.SubmitForSession(context.Background(), managementSession, SubmitRequest{
+		Version: 1,
+		AssignedGuests: []GuestAttendanceInput{{
+			GuestID: openHousehold.Guests[0].ID, Attendance: AttendanceAttending,
+		}, {
+			GuestID: openHousehold.Guests[1].ID, Attendance: AttendanceDeclined,
+		}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, AttendanceAttending, managedOpen.Guests[0].Attendance)
 
 	privateAfter, err := f.store.LoadHousehold(context.Background(), private.Invitation.ID)
 	require.NoError(t, err)
@@ -296,6 +335,39 @@ func TestOpenEnrollmentCreatesIsolatedInvitationAndKeepsPrivateContactMatchUntou
 		GuestNames: []string{"Other"},
 	})
 	assert.ErrorIs(t, err, ErrCapacity)
+}
+
+func TestOpenOriginInvitationCanRecoverToStoredDestination(t *testing.T) {
+	f := newServiceFixture(t)
+	_, accessURL, err := f.service.ConfigureOpen(context.Background(), f.eventID, f.userID,
+		ConfigureOpenRequest{Enabled: true, MaxPartySize: 1})
+	require.NoError(t, err)
+	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error { return nil })
+	_, enrolled, err := f.service.EnrollOpen(context.Background(), OpenEnrollmentRequest{
+		Capability: capabilityFromURL(accessURL), Label: "Recoverable open household",
+		ContactEmail: ptr("open-recovery@example.com"), PreferredDeliveryMethod: "email",
+		GuestNames: []string{"Open Guest"},
+	})
+	require.NoError(t, err)
+
+	var recipient, recoveryLink string
+	f.service.SetEmailSender(func(_ context.Context, _, _, to, _ string, _ string, plain string) error {
+		recipient = to
+		for _, line := range strings.Split(plain, "\n") {
+			if strings.Contains(line, "/invitation/recover#") {
+				recoveryLink = line
+			}
+		}
+		return nil
+	})
+	require.NoError(t, f.service.RequestRecovery(context.Background(), f.eventID,
+		"OPEN-RECOVERY@example.com", "192.0.2.20"))
+	assert.Equal(t, "open-recovery@example.com", recipient)
+	require.NotEmpty(t, recoveryLink)
+	_, recovered, err := f.service.ExchangeRecovery(context.Background(), capabilityFromURL(recoveryLink))
+	require.NoError(t, err)
+	assert.Equal(t, enrolled.Invitation.ID, recovered.Invitation.ID)
+	assert.Equal(t, SourceOpen, recovered.Invitation.Source)
 }
 
 func TestOpenEnrollmentWindowsAndRotationAreEnforced(t *testing.T) {
@@ -403,6 +475,54 @@ func TestConcurrentOpenCapacityCreatesExactlyOneInvitation(t *testing.T) {
 	}
 	assert.Equal(t, 1, successes)
 	assert.Equal(t, 1, capacityFailures)
+}
+
+func TestRecoveryBudgetsAreAtomicUnderConcurrency(t *testing.T) {
+	tests := []struct {
+		name            string
+		attempts        int
+		expectedAllowed int
+		sourceFor       func(int) string
+		destinationFor  func(int) string
+	}{
+		{name: "source", attempts: 12, expectedAllowed: 5,
+			sourceFor:      func(int) string { return "same-source" },
+			destinationFor: func(i int) string { return fmt.Sprintf("destination-%d", i) }},
+		{name: "destination", attempts: 12, expectedAllowed: 3,
+			sourceFor:      func(i int) string { return fmt.Sprintf("source-%d", i) },
+			destinationFor: func(int) string { return "same-destination" }},
+		{name: "event", attempts: 40, expectedAllowed: 30,
+			sourceFor:      func(i int) string { return fmt.Sprintf("source-%d", i) },
+			destinationFor: func(i int) string { return fmt.Sprintf("destination-%d", i) }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newServiceFixture(t)
+			start := make(chan struct{})
+			results := make(chan bool, test.attempts)
+			errorsByCall := make(chan error, test.attempts)
+			for i := 0; i < test.attempts; i++ {
+				go func(index int) {
+					<-start
+					// Separate Store values ensure the database, rather than a
+					// process-local mutex, serializes the budget decision.
+					allowed, allowErr := NewStore(f.store.db).AllowRecovery(context.Background(),
+						f.eventID, test.sourceFor(index), test.destinationFor(index))
+					results <- allowed
+					errorsByCall <- allowErr
+				}(i)
+			}
+			close(start)
+			allowedCount := 0
+			for i := 0; i < test.attempts; i++ {
+				require.NoError(t, <-errorsByCall)
+				if <-results {
+					allowedCount++
+				}
+			}
+			assert.Equal(t, test.expectedAllowed, allowedCount)
+		})
+	}
 }
 
 func intPtr(value int) *int { return &value }

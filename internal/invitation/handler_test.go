@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
@@ -68,14 +70,36 @@ func TestCapabilityExchangeDoesNotLeakCapabilityAndSetsScopedCookie(t *testing.T
 func TestRecoveryRequestIsEnumerationResistant(t *testing.T) {
 	f, handler, logs := publicHandlerFixture(t)
 	f.create("Recoverable", "stored@example.com", 0, "Guest")
-	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error { return nil })
+	deliveryStarted := make(chan struct{})
+	deliveryFinished := make(chan struct{})
+	var startedOnce sync.Once
+	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error {
+		startedOnce.Do(func() { close(deliveryStarted) })
+		time.Sleep(500 * time.Millisecond)
+		close(deliveryFinished)
+		return nil
+	})
 
+	existingStarted := time.Now()
 	existing := postPublicJSON(t, handler, "/invitations/recovery/request", RecoveryRequest{
 		EventID: f.eventID, Contact: "stored@example.com",
 	})
+	existingDuration := time.Since(existingStarted)
+	select {
+	case <-deliveryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("matching recovery delivery did not start")
+	}
+	missingStarted := time.Now()
 	missing := postPublicJSON(t, handler, "/invitations/recovery/request", RecoveryRequest{
 		EventID: f.eventID, Contact: "missing@example.com",
 	})
+	missingDuration := time.Since(missingStarted)
+	select {
+	case <-deliveryFinished:
+	case <-time.After(time.Second):
+		t.Fatal("matching recovery delivery did not finish")
+	}
 
 	assert.Equal(t, http.StatusOK, existing.Code)
 	assert.Equal(t, existing.Code, missing.Code)
@@ -85,4 +109,15 @@ func TestRecoveryRequestIsEnumerationResistant(t *testing.T) {
 	assert.NotContains(t, logs.String(), "stored@example.com")
 	assert.NotContains(t, logs.String(), "missing@example.com")
 	assert.True(t, strings.Contains(existing.Body.String(), "If a matching invitation exists"))
+	assert.GreaterOrEqual(t, existingDuration, recoveryResponseFloor)
+	assert.GreaterOrEqual(t, missingDuration, recoveryResponseFloor)
+	assert.Less(t, existingDuration, 300*time.Millisecond,
+		"the deliberately delayed stored-destination delivery must not delay the public response")
+	assert.Less(t, missingDuration, 300*time.Millisecond)
+	delta := existingDuration - missingDuration
+	if delta < 0 {
+		delta = -delta
+	}
+	assert.Less(t, delta, 75*time.Millisecond,
+		"matching and missing contacts should have no obvious public timing distinction")
 }

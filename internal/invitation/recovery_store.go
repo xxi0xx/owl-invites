@@ -19,6 +19,25 @@ func (s *Store) AllowRecovery(ctx context.Context, eventID, sourceFingerprint, d
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// The counts and insert form one budget decision. PostgreSQL advisory locks
+	// serialize this decision across application instances. SQLite's no-op write
+	// upgrades the deferred transaction before it reads the counters, acquiring
+	// the engine's database write reservation without changing a row.
+	switch s.db.Dialect() {
+	case "postgres":
+		const recoveryBudgetLock int64 = 0x4f574c5245434f56 // "OWLRECOV"
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(?)`, recoveryBudgetLock); err != nil {
+			return false, fmt.Errorf("lock recovery budget: %w", err)
+		}
+	case "sqlite":
+		if _, err := tx.ExecContext(ctx, `UPDATE invitation_recovery_attempts
+			SET created_at = created_at WHERE 0`); err != nil {
+			return false, fmt.Errorf("lock recovery budget: %w", err)
+		}
+	default:
+		return false, fmt.Errorf("lock recovery budget: unsupported dialect %q", s.db.Dialect())
+	}
+
 	cutoff := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
 	checks := []struct {
 		query string
@@ -58,7 +77,7 @@ func (s *Store) AllowRecovery(ctx context.Context, eventID, sourceFingerprint, d
 
 func (s *Store) FindRecoveryMatches(ctx context.Context, eventID, normalizedContact string) ([]*Invitation, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+invitationColumns+` FROM invitations
-		WHERE event_id = ? AND source = 'private' AND revoked_at IS NULL
+		WHERE event_id = ? AND revoked_at IS NULL
 		AND (normalized_contact_email = ? OR normalized_contact_phone = ?)
 		ORDER BY created_at, id`, eventID, normalizedContact, normalizedContact)
 	if err != nil {

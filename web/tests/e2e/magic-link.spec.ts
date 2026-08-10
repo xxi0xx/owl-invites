@@ -166,8 +166,31 @@ test('Gate 2 private and open invitation flows stay isolated through Mailpit and
 	await openPage.getByRole('button', { name: 'Create my invitation' }).click();
 	await expect(openPage).toHaveURL(/\/invitation$/);
 
+	const openManagementMessage = await latestMailFor(request, HOUSEHOLD_EMAIL);
+	const openManagementBody = `${openManagementMessage.Text || ''}\n${openManagementMessage.HTML || ''}`;
+	const openManagementLink = openManagementBody.match(/https?:\/\/[^\s"'<>]+\/invitation\/accept#[^\s"'<>]+/)?.[0] || '';
+	expect(openManagementLink).not.toBe('');
+
+	// Destroy the enrollment browser session. The separately delivered
+	// household capability must recover management in a fresh browser without
+	// crossing into the private household that uses the same destination.
+	await openContext.close();
+	const openManagementContext = await browser.newContext();
+	const openManagementPage = await openManagementContext.newPage();
+	await openManagementPage.goto(openManagementLink);
+	await expect(openManagementPage).toHaveURL(/\/invitation$/);
+	await expect(openManagementPage.getByRole('heading', { name: 'Gate Two Household Event' })).toBeVisible();
+	await expect(openManagementPage.getByText('Dana', { exact: true })).toBeVisible();
+	await expect(openManagementPage.getByText('Ellis', { exact: true })).toBeVisible();
+	await expect(openManagementPage.getByText('Alex', { exact: true })).toHaveCount(0);
+	const openAttendance = openManagementPage.locator('section').filter({ has: openManagementPage.getByRole('heading', { name: 'Guests' }) }).locator('select');
+	await openAttendance.nth(0).selectOption('attending');
+	await openAttendance.nth(1).selectOption('declined');
+	await openManagementPage.getByRole('button', { name: 'Save response' }).click();
+	await expect(openManagementPage.getByText('Your response was saved.')).toBeVisible();
+
 	await page.goto(invitationsURL);
-	await expect(page.getByText('2 households · 5 guests · 3 attending · 2 pending')).toBeVisible();
+	await expect(page.getByText('2 households · 5 guests · 4 attending · 0 pending')).toBeVisible();
 	await expect(namedHousehold).toContainText(HOUSEHOLD_EMAIL);
 	await expect(namedHousehold).toContainText('Alex: attending');
 	const openHousehold = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Open household' }) });
@@ -195,6 +218,6 @@ test('Gate 2 private and open invitation flows stay isolated through Mailpit and
 	expect(`${broadcast.Text || ''}\n${broadcast.HTML || ''}`).toContain('one-way invitation broadcast');
 
 	await capacityContext.close();
-	await openContext.close();
+	await openManagementContext.close();
 	await privateContext.close();
 });

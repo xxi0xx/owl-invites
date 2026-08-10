@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
@@ -16,6 +17,8 @@ import (
 )
 
 const invitationSessionCookie = "owl_invitation_session"
+
+const recoveryResponseFloor = 100 * time.Millisecond
 
 type UserFromCtx func(ctx context.Context) (id string, ok bool)
 type EventAccessChecker func(ctx context.Context, eventID, userID string) error
@@ -253,13 +256,24 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) requestRecovery(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	var req RecoveryRequest
 	if err := httpx.DecodeJSON(r, &req); err == nil {
-		if err := h.service.RequestRecovery(r.Context(), req.EventID, req.Contact, remoteIdentity(r)); err != nil {
-			// The error is deliberately not reflected in the public response. Do
-			// not attach event/contact values to this log entry.
-			h.logger.Error().Err(err).Str("error_ref", errcode.Ref()).Msg("invitation recovery request failed")
-		}
+		eventID, contact, sourceIdentity := req.EventID, req.Contact, remoteIdentity(r)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := h.service.RequestRecovery(ctx, eventID, contact, sourceIdentity); err != nil {
+				// The error is deliberately not reflected in the public response. Do
+				// not attach event/contact values to this log entry.
+				h.logger.Error().Err(err).Str("error_ref", errcode.Ref()).Msg("invitation recovery request failed")
+			}
+		}()
+	}
+	if remaining := recoveryResponseFloor - time.Since(started); remaining > 0 {
+		timer := time.NewTimer(remaining)
+		defer timer.Stop()
+		<-timer.C
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
 		"message": "If a matching invitation exists, recovery instructions will be sent to its stored destination.",

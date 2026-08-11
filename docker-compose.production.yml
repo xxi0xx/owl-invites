@@ -2,7 +2,7 @@
 # verified release workflow; tags (including semantic-version tags) are not the
 # canonical deployment identity. No stable Owl Invites image is published yet.
 services:
-  openrsvp:
+  owl-invites:
     image: ghcr.io/xxi0xx/owl-invites@sha256:${OWL_INVITES_IMAGE_DIGEST:?OWL_INVITES_IMAGE_DIGEST is required}
     user: "10001:10001"
     read_only: true
@@ -13,7 +13,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
     volumes:
-      - openrsvp-data:/data
+      - owl-invites-data:/data
     secrets:
       - source: owl_invites_secret_key
         target: owl_invites_secret_key
@@ -23,7 +23,6 @@ services:
       BASE_URL: ${BASE_URL:?BASE_URL is required}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:?TRUSTED_PROXIES is required behind the reverse proxy}
       DB_DRIVER: sqlite
-      DB_DSN: /data/openrsvp.db
       UPLOADS_DIR: /data/uploads
       OWL_INVITES_SECRET_KEY_FILE: /run/secrets/owl_invites_secret_key
       ALLOW_SIGNUPS: "false"
@@ -56,4 +55,4 @@ secrets:
     file: ${OWL_INVITES_SECRET_KEY_HOST_FILE:?OWL_INVITES_SECRET_KEY_HOST_FILE is required}
 
 volumes:
-  openrsvp-data:
+  owl-invites-data:

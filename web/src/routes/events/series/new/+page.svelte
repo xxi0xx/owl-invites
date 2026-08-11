@@ -117,7 +117,7 @@
 </script>
 
 <svelte:head>
-	<title>Create Recurring Series -- OpenRSVP</title>
+	<title>Create Recurring Series -- Owl Invites</title>
 </svelte:head>
 
 <AppShell>

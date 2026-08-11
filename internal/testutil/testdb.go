@@ -12,8 +12,8 @@ import (
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/database"
 )
 
 // testDB wraps a *sql.DB to implement the database.DB interface for testing.
@@ -201,7 +201,7 @@ func TestConfig() *config.Config {
 		NotificationEmailProvider: "smtp",
 		SMTPHost:                  "localhost",
 		SMTPPort:                  587,
-		SMTPFrom:                  "test@openrsvp.local",
+		SMTPFrom:                  "test@owl-invites.local",
 		DefaultRetentionDays:      30,
 		MaxCoHostsPerEvent:        10,
 		// Most legacy tests exercise the pre-Gate-1 open-signup behavior

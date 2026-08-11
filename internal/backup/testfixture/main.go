@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/auth"
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/event"
-	"github.com/yannkr/openrsvp/internal/invitation"
-	"github.com/yannkr/openrsvp/internal/question"
+	"github.com/xxi0xx/owl-invites/internal/auth"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/event"
+	"github.com/xxi0xx/owl-invites/internal/invitation"
+	"github.com/xxi0xx/owl-invites/internal/question"
 )
 
 type fixtureState struct {

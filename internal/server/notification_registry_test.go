@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 func TestBuildNotificationRegistrySMTPDefault(t *testing.T) {
@@ -88,7 +88,7 @@ func TestBuildNotificationRegistryVonageSMS(t *testing.T) {
 		NotificationSMSProvider: "vonage",
 		VonageAPIKey:            "key",
 		VonageAPISecret:         "secret",
-		VonageFrom:              "OpenRSVP",
+		VonageFrom:              "Owl Invites",
 	}
 
 	r := buildNotificationRegistry(cfg, zerolog.Nop())

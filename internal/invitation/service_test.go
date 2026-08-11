@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yannkr/openrsvp/internal/errcode"
-	"github.com/yannkr/openrsvp/internal/testutil"
+	"github.com/xxi0xx/owl-invites/internal/errcode"
+	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 const testSecret = "test-only-owl-invites-secret-key-32-bytes"

@@ -29,7 +29,7 @@
 	async function handleExport() {
 		exporting = true;
 		try {
-			await api.download('/auth/me/export', 'openrsvp-export.json');
+			await api.download('/auth/me/export', 'owl-invites-export.json');
 		} catch (err: unknown) {
 			const apiErr = err as { message?: string };
 			toast.error(apiErr.message || 'Failed to export your data');
@@ -63,7 +63,7 @@
 </script>
 
 <svelte:head>
-	<title>Account Settings -- OpenRSVP</title>
+	<title>Account Settings -- Owl Invites</title>
 </svelte:head>
 
 {#if $isLoading}

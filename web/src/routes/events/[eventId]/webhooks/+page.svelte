@@ -242,7 +242,7 @@
 </script>
 
 <svelte:head>
-	<title>Webhooks — OpenRSVP</title>
+	<title>Webhooks — Owl Invites</title>
 </svelte:head>
 
 <AppShell>

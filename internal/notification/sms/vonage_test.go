@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 func TestVonageProvider_Send_RequestConstruction(t *testing.T) {
@@ -30,7 +30,7 @@ func TestVonageProvider_Send_RequestConstruction(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewVonageProvider("keyabc", "secretxyz", "OpenRSVP")
+	p := NewVonageProvider("keyabc", "secretxyz", "Owl Invites")
 	p.baseURL = srv.URL + "/sms/json"
 
 	res, err := p.Send(context.Background(), &notification.Message{
@@ -55,7 +55,7 @@ func TestVonageProvider_Send_RequestConstruction(t *testing.T) {
 	if gotBody.APIKey != "keyabc" || gotBody.APISecret != "secretxyz" {
 		t.Fatalf("creds in body = %q/%q", gotBody.APIKey, gotBody.APISecret)
 	}
-	if gotBody.To != "447700900000" || gotBody.From != "OpenRSVP" || gotBody.Text != "hello" {
+	if gotBody.To != "447700900000" || gotBody.From != "Owl Invites" || gotBody.Text != "hello" {
 		t.Fatalf("body = %+v", gotBody)
 	}
 }

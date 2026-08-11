@@ -15,11 +15,11 @@ let testEventId: string;
 let testShareToken: string;
 let testRsvpToken: string;
 
-test.describe.serial('OpenRSVP E2E', () => {
+test.describe.serial('Owl Invites E2E', () => {
 	// ─── Landing & Health ────────────────────────────────
 	test('landing page loads with app branding', async ({ page }) => {
 		await page.goto('/');
-		await expect(page).toHaveTitle(/OpenRSVP/i);
+		await expect(page).toHaveTitle(/Owl Invites/i);
 	});
 
 	test('health endpoint returns ok', async ({ request }) => {

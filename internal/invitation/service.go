@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/xxi0xx/owl-invites/internal/errcode"
 )
 
 type EmailSender func(ctx context.Context, eventID, invitationID, to, subject, htmlBody, plainBody string) error

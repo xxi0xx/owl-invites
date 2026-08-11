@@ -43,7 +43,6 @@ docker run --detach \
   --env PORT=8080 \
   --env BASE_URL=https://invites.example \
   --env DB_DRIVER=sqlite \
-  --env DB_DSN=/data/openrsvp.db \
   --env UPLOADS_DIR=/data/uploads \
   --env OWL_INVITES_SECRET_KEY_FILE=/run/secrets/owl_invites_secret_key \
   --env ALLOW_SIGNUPS=false \
@@ -68,6 +67,8 @@ jq -e --arg commit "$EXPECTED_COMMIT" '.status == "ok" and .commit == $commit' "
 docker exec "$container" wget -qO- http://127.0.0.1:8080/setup > "$work/frontend.html"
 grep -Fqi '<!doctype html>' "$work/frontend.html"
 grep -Fq '/_app/immutable/' "$work/frontend.html"
+grep -Fq 'Owl Invites' "$work/frontend.html"
+docker exec "$container" test -f /data/owl-invites.db
 
 docker inspect "$container" > "$work/inspect.json"
 jq -e '.[0].Config.User == "10001:10001"' "$work/inspect.json" >/dev/null
@@ -92,7 +93,15 @@ docker exec "$container" owl-invites version --json > "$work/version.json"
 jq -e --arg commit "$EXPECTED_COMMIT" '.version == "ci" and .commit == $commit and .buildState == "clean"' "$work/version.json" >/dev/null
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$EXPECTED_COMMIT"
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$IMAGE")" = ci
+test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$IMAGE")" = "Owl Invites"
+test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.description"}}' "$IMAGE")" = "Self-hosted invitation and RSVP management"
+test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$IMAGE")" = "https://github.com/xxi0xx/owl-invites"
 test "$(docker image inspect --format '{{.Architecture}}' "$IMAGE")" = "$EXPECTED_ARCH"
+docker exec "$container" test -x /usr/local/bin/owl-invites
+if docker exec "$container" test -e /usr/local/bin/openrsvp; then
+  echo "production image still ships the retired openrsvp executable" >&2
+  exit 1
+fi
 
 if docker logs "$container" 2>&1 | grep -Fq "$secret"; then
   echo "container logs leaked OWL_INVITES_SECRET_KEY" >&2

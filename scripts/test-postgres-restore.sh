@@ -5,10 +5,12 @@ set -euo pipefail
 : "${SERVER_BINARY:?SERVER_BINARY is required}"
 : "${CLI_BINARY:?CLI_BINARY is required}"
 
-source_database=owl_invites_gate3_source
-restore_database=owl_invites_gate3_restored
-source_dsn="postgres://openrsvp:openrsvp@127.0.0.1:5432/${source_database}?sslmode=disable"
-restore_dsn="postgres://openrsvp:openrsvp@127.0.0.1:5432/${restore_database}?sslmode=disable"
+legacy_role=event_operator
+legacy_password=gate4-compatibility-password
+source_database=legacy_event_state
+restore_database=legacy_event_state_restored
+source_dsn="postgres://${legacy_role}:${legacy_password}@127.0.0.1:5432/${source_database}?sslmode=disable"
+restore_dsn="postgres://${legacy_role}:${legacy_password}@127.0.0.1:5432/${restore_database}?sslmode=disable"
 secret=4c64fb646f28c3cf57d320675a546e290173f4ab91786764
 wrong_secret=f84a173ee20738df4867a3d18439aa9f63a81cf46c996d9f
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/owl-invites-postgres-restore.XXXXXX")
@@ -42,7 +44,9 @@ trap stop_server EXIT
 
 psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${source_database} WITH (FORCE)"
 psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${restore_database} WITH (FORCE)"
-psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${source_database}"
+psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "DROP ROLE IF EXISTS ${legacy_role}"
+psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "CREATE ROLE ${legacy_role} LOGIN PASSWORD '${legacy_password}'"
+psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${source_database} OWNER ${legacy_role}"
 
 export ENV=production
 export DB_DRIVER=postgres
@@ -84,7 +88,7 @@ echo "$uploads_sha  $uploads_archive" | sha256sum --check --status
 
 psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "DROP DATABASE ${source_database} WITH (FORCE)"
 mv "$source_uploads" "$work/destroyed-source-uploads"
-psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${restore_database}"
+psql "$PG_ADMIN_DSN" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${restore_database} OWNER ${legacy_role}"
 pg_restore --exit-on-error --no-owner --no-privileges --dbname "$restore_dsn" "$dump"
 mkdir -p "$restored_uploads"
 tar --extract --no-same-owner -f "$uploads_archive" -C "$restored_uploads"
@@ -138,4 +142,4 @@ test "$missing_status" = 401
 cmp "$work/wrong-old.json" "$work/wrong-missing.json"
 stop_server
 
-echo "PostgreSQL backup/restore acceptance passed"
+echo "PostgreSQL backup/restore and arbitrary operator DSN acceptance passed"

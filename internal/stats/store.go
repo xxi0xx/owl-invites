@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yannkr/openrsvp/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/database"
 )
 
 // Store handles database queries for instance-wide aggregate statistics.

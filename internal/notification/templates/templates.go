@@ -36,7 +36,7 @@ func RenderMagicLink(baseURL, token string, expiryMinutes int) (html, plain stri
 	if err := magicLinkTmpl.Execute(&buf, data); err != nil {
 		return "", "", fmt.Errorf("render magic link template: %w", err)
 	}
-	plain = fmt.Sprintf("Sign in to OpenRSVP\n\nClick the link below to sign in:\n%s\n\nThis link expires in %d minutes.\n\nIf you did not request this link, you can safely ignore this email.", url, expiryMinutes)
+	plain = fmt.Sprintf("Sign in to Owl Invites\n\nClick the link below to sign in:\n%s\n\nThis link expires in %d minutes.\n\nIf you did not request this link, you can safely ignore this email.", url, expiryMinutes)
 	return buf.String(), plain, nil
 }
 
@@ -61,6 +61,7 @@ func RenderRetentionWarning(eventTitle, expiresAt, dashboardURL string) (html, p
 	if dashboardURL != "" {
 		text.WriteString(fmt.Sprintf("To extend the retention period, visit:\n%s\n", dashboardURL))
 	}
+	text.WriteString("\nThis is an automated notice from Owl Invites.\n")
 	return buf.String(), text.String(), nil
 }
 
@@ -83,7 +84,7 @@ func RenderFeedbackConfirmation(feedbackType string, allowFollowUp bool) (htmlBo
 	if allowFollowUp {
 		text.WriteString("Since you opted in to follow-up contact, we may reach out to you if we have questions or updates related to your feedback.\n\n")
 	}
-	text.WriteString("Your feedback helps make OpenRSVP better for everyone.\n")
+	text.WriteString("Your feedback helps make Owl Invites better for everyone.\n")
 	return buf.String(), text.String(), nil
 }
 
@@ -108,5 +109,6 @@ func RenderCoHostInvitation(eventTitle, eventDate, location, addedByName, dashbo
 	text.WriteString(fmt.Sprintf("%s has added you as a co-host for %s.\n\n", addedByName, eventTitle))
 	text.WriteString(fmt.Sprintf("Event: %s\nDate: %s\nLocation: %s\n\n", eventTitle, eventDate, location))
 	text.WriteString(fmt.Sprintf("View the event dashboard:\n%s\n", dashboardURL))
+	text.WriteString("\nSent by Owl Invites.\n")
 	return buf.String(), text.String(), nil
 }

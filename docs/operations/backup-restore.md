@@ -75,7 +75,7 @@ not overwrite an existing database or uploads directory:
 export DB_DRIVER=sqlite
 export OWL_INVITES_SECRET_KEY_FILE=/secure/owl-invites-capability-key
 owl-invites backup restore /backups/owl-invites-2026-08-10T120000Z \
-  --database /restore/openrsvp.db \
+  --database /restore/owl-invites.db \
   --uploads /restore/uploads
 ```
 
@@ -93,6 +93,27 @@ A wrong key fails before either target is created. After restore:
 
 CI performs this exact drill, including capability failure under a different
 secret and corruption detection after an upload is modified.
+
+### Offline migration from the inherited SQLite path
+
+Normal startup deliberately does not move a live database or its WAL/SHM
+sidecars. To adopt `/data/owl-invites.db` from the inherited default:
+
+1. stop Owl Invites and verify that no process has the SQLite database open;
+2. create and verify a Gate 3-compatible backup, and separately verify the
+   active capability-key fingerprint;
+3. inspect the source directory for the main database and any `-wal`/`-shm`
+   sidecars; if sidecars exist, checkpoint/close cleanly with the same SQLite
+   toolchain before moving the database as one offline recovery set;
+4. move the database only while stopped, or restore the verified backup into
+   the canonical path;
+5. set `DB_DSN=/data/owl-invites.db` for the first verification start;
+6. require readiness, verify organizer/event/invitation state, and exchange a
+   known pre-move household capability; and
+7. remove the old file only after the new path and recovery point are proven.
+
+If both default files exist and `DB_DSN` is unset, startup fails before opening
+either file. Select one explicitly; never guess which copy is authoritative.
 
 ## PostgreSQL
 

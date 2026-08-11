@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -9,6 +10,12 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+)
+
+const (
+	DefaultSQLiteDSN       = "/data/owl-invites.db"
+	LegacyDefaultSQLiteDSN = "/data/openrsvp.db"
+	legacyInstanceName     = "OpenRSVP"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -20,6 +27,9 @@ type Config struct {
 	// Database
 	DBDriver string
 	DBDSN    string
+	// DBDSNWarning is a non-secret operator warning produced when the legacy
+	// implicit SQLite path is selected. Explicit DB_DSN values never set it.
+	DBDSNWarning string
 
 	// Auth
 	MagicLinkExpiry          time.Duration
@@ -96,10 +106,13 @@ func Load() (*Config, error) {
 	env := getEnv("ENV", "development")
 
 	dbDriver := getEnv("DB_DRIVER", "sqlite")
-	dbDSN := getEnv("DB_DSN", "/data/openrsvp.db")
 
 	if dbDriver != "sqlite" && dbDriver != "postgres" {
 		return nil, fmt.Errorf("unsupported DB_DRIVER: %s (must be sqlite or postgres)", dbDriver)
+	}
+	dbDSN, dbDSNWarning, err := resolveDatabaseDSN(dbDriver)
+	if err != nil {
+		return nil, err
 	}
 
 	magicLinkExpiry, err := time.ParseDuration(getEnv("MAGIC_LINK_EXPIRY", "15m"))
@@ -185,8 +198,9 @@ func Load() (*Config, error) {
 		Port: port,
 		Env:  env,
 
-		DBDriver: dbDriver,
-		DBDSN:    dbDSN,
+		DBDriver:     dbDriver,
+		DBDSN:        dbDSN,
+		DBDSNWarning: dbDSNWarning,
 
 		MagicLinkExpiry:          magicLinkExpiry,
 		SessionExpiry:            sessionExpiry,
@@ -202,7 +216,7 @@ func Load() (*Config, error) {
 		SMTPPort:                  smtpPort,
 		SMTPUsername:              getEnv("SMTP_USERNAME", ""),
 		SMTPPassword:              getEnv("SMTP_PASSWORD", ""),
-		SMTPFrom:                  getEnv("SMTP_FROM", "noreply@openrsvp.local"),
+		SMTPFrom:                  getEnv("SMTP_FROM", "noreply@owl-invites.local"),
 		SendGridAPIKey:            getEnv("SENDGRID_API_KEY", ""),
 		SendGridFrom:              getEnv("SENDGRID_FROM", ""),
 		SESRegion:                 getEnv("SES_REGION", ""),
@@ -236,7 +250,7 @@ func Load() (*Config, error) {
 
 		// Instance settings: env-provided defaults. The DB (setup wizard) may
 		// overlay these at startup via ApplyInstanceOverrides.
-		InstanceName:    getEnv("INSTANCE_NAME", "OpenRSVP"),
+		InstanceName:    getEnv("INSTANCE_NAME", "Owl Invites"),
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "UTC"),
 		// Public organizer self-signup is opt-in. Administrator-created account
 		// invitations and owner-sponsored co-host invitations are separate flows
@@ -250,6 +264,51 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func resolveDatabaseDSN(driver string) (string, string, error) {
+	if explicit, ok := os.LookupEnv("DB_DSN"); ok {
+		if explicit == "" {
+			return "", "", errors.New("DB_DSN is explicitly set but empty")
+		}
+		return explicit, "", nil
+	}
+	if driver == "postgres" {
+		return "", "", errors.New("DB_DSN is required when DB_DRIVER=postgres")
+	}
+	return ResolveSQLiteDefaultDSN(DefaultSQLiteDSN, LegacyDefaultSQLiteDSN)
+}
+
+// ResolveSQLiteDefaultDSN selects between the canonical and legacy implicit
+// paths without modifying either database or its WAL/SHM sidecars.
+func ResolveSQLiteDefaultDSN(canonicalPath, legacyPath string) (string, string, error) {
+	canonicalExists, err := regularPathExists(canonicalPath)
+	if err != nil {
+		return "", "", fmt.Errorf("inspect canonical SQLite default %s: %w", canonicalPath, err)
+	}
+	legacyExists, err := regularPathExists(legacyPath)
+	if err != nil {
+		return "", "", fmt.Errorf("inspect legacy SQLite default %s: %w", legacyPath, err)
+	}
+	if canonicalExists && legacyExists {
+		return "", "", fmt.Errorf("both SQLite defaults exist (%s and %s); set DB_DSN explicitly to choose one", canonicalPath, legacyPath)
+	}
+	if canonicalExists || !legacyExists {
+		return canonicalPath, "", nil
+	}
+	warning := fmt.Sprintf("using legacy SQLite default %s because %s does not exist; set DB_DSN explicitly or perform the documented offline path migration", legacyPath, canonicalPath)
+	return legacyPath, warning, nil
+}
+
+func regularPathExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
 }
 
 func loadInvitationSecret(environment string) (string, error) {
@@ -311,7 +370,14 @@ func isObviousSecretPlaceholder(value string) bool {
 //	cfg.ApplyInstanceOverrides(overrides)
 func (c *Config) ApplyInstanceOverrides(overrides map[string]string) {
 	if v, ok := overrides["instance_name"]; ok && v != "" {
-		c.InstanceName = v
+		if v == legacyInstanceName {
+			// Migration 31 persisted the upstream product name as a setup default.
+			// Treat only that exact inherited default as Owl Invites; arbitrary
+			// operator-selected instance names remain authoritative.
+			c.InstanceName = "Owl Invites"
+		} else {
+			c.InstanceName = v
+		}
 	}
 	if v, ok := overrides["default_timezone"]; ok && v != "" {
 		c.DefaultTimezone = v

@@ -12,17 +12,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	backupops "github.com/yannkr/openrsvp/internal/backup"
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/invitation"
-	"github.com/yannkr/openrsvp/internal/question"
-	"github.com/yannkr/openrsvp/internal/testutil"
+	backupops "github.com/xxi0xx/owl-invites/internal/backup"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/invitation"
+	"github.com/xxi0xx/owl-invites/internal/question"
+	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 const restoreSecret = "4c64fb646f28c3cf57d320675a546e290173f4ab91786764"
 
-func TestSQLiteBackupVerifyRestorePreservesCapabilityAndState(t *testing.T) {
+// TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState is the executable
+// compatibility drill: restore verified Gate 3 state at the inherited default
+// path, let Gate 4 discover it, and prove persisted capabilities still work.
+func TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	sourceDatabase := filepath.Join(root, "source.db")
@@ -82,6 +85,7 @@ func TestSQLiteBackupVerifyRestorePreservesCapabilityAndState(t *testing.T) {
 	assert.NoDirExists(t, wrongUploads)
 
 	restoredDatabase := filepath.Join(root, "restored", "openrsvp.db")
+	canonicalDatabase := filepath.Join(root, "restored", "owl-invites.db")
 	restoredUploads := filepath.Join(root, "restored", "uploads")
 	_, err = backupops.RestoreSQLite(ctx, bundle, restoredDatabase, restoredUploads, restoreSecret)
 	require.NoError(t, err)
@@ -90,7 +94,11 @@ func TestSQLiteBackupVerifyRestorePreservesCapabilityAndState(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "representative-upload", string(upload))
 
-	restoredDB := openSQLite(t, restoredDatabase)
+	selectedDatabase, legacyWarning, err := config.ResolveSQLiteDefaultDSN(canonicalDatabase, restoredDatabase)
+	require.NoError(t, err)
+	assert.Equal(t, restoredDatabase, selectedDatabase)
+	assert.Contains(t, legacyWarning, "legacy SQLite default")
+	restoredDB := openSQLite(t, selectedDatabase)
 	restoredService, err := invitation.NewService(invitation.NewStore(restoredDB), restoreSecret, "https://invites.example", 24*time.Hour, 15*time.Minute)
 	require.NoError(t, err)
 	_, restoredHousehold, err := restoredService.ExchangePrivate(ctx, capability)

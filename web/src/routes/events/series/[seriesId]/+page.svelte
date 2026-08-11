@@ -169,7 +169,7 @@
 </script>
 
 <svelte:head>
-	<title>{series?.title || 'Series Details'} -- OpenRSVP</title>
+	<title>{series?.title || 'Series Details'} -- Owl Invites</title>
 </svelte:head>
 
 <AppShell>

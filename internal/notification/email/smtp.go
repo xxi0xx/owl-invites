@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 // SMTPProvider sends emails via SMTP.
@@ -68,11 +68,11 @@ func (p *SMTPProvider) Send(ctx context.Context, msg *notification.Message) (*no
 	buf.WriteString("MIME-Version: 1.0\r\n")
 	buf.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().UTC().Format(time.RFC1123Z)))
 
-	altBoundary := fmt.Sprintf("==OpenRSVP-alt==%d==", time.Now().UnixNano())
+	altBoundary := fmt.Sprintf("==OwlInvites-alt==%d==", time.Now().UnixNano())
 
 	if len(msg.Attachments) > 0 {
 		// Wrap in multipart/mixed when attachments are present.
-		mixedBoundary := fmt.Sprintf("==OpenRSVP-mix==%d==", time.Now().UnixNano())
+		mixedBoundary := fmt.Sprintf("==OwlInvites-mix==%d==", time.Now().UnixNano())
 		buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", mixedBoundary))
 		buf.WriteString("\r\n")
 

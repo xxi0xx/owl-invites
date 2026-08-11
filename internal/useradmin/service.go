@@ -14,9 +14,9 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/yannkr/openrsvp/internal/auth"
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/auth"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/database"
 )
 
 var (
@@ -414,7 +414,8 @@ func (s *Service) renderInviteEmail(rawToken string, expiresAt time.Time) (strin
 	// request or access logs. The SPA exchanges it via the strict JSON endpoint.
 	url := strings.TrimRight(s.cfg.BaseURL, "/") + "/auth/accept-invite#token=" + rawToken
 	instanceName := strings.TrimSpace(s.cfg.InstanceName)
-	if instanceName == "" || instanceName == "OpenRSVP" {
+	const legacyDefaultInstanceName = "OpenRSVP"
+	if instanceName == "" || instanceName == legacyDefaultInstanceName {
 		instanceName = "Owl Invites"
 	}
 	htmlBody := fmt.Sprintf(`<p>You have been invited to manage events on %s.</p><p><a href="%s">Accept invitation</a></p><p>This invitation expires at %s.</p>`,

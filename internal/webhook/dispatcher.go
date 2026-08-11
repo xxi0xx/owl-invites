@@ -19,12 +19,20 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// maxResponseBodySize is the maximum number of bytes stored from a webhook
-// endpoint response. Larger bodies are truncated.
-const maxResponseBodySize = 4096
+const (
+	// maxResponseBodySize is the maximum number of bytes stored from a webhook
+	// endpoint response. Larger bodies are truncated.
+	maxResponseBodySize = 4096
+	// maxRetries is the maximum number of delivery attempts per webhook.
+	maxRetries = 3
 
-// maxRetries is the maximum number of delivery attempts per webhook.
-const maxRetries = 3
+	// These wire values are frozen for existing webhook consumers. Product
+	// branding must not change the signature contract or delivery identity.
+	legacySignatureHeader = "X-OpenRSVP-Signature"
+	legacyEventHeader     = "X-OpenRSVP-Event"
+	legacyDeliveryHeader  = "X-OpenRSVP-Delivery"
+	legacyWebhookAgent    = "OpenRSVP-Webhook/1.0"
+)
 
 // Dispatcher handles asynchronous webhook delivery with HMAC signing,
 // SSRF protection, and automatic retries.
@@ -155,10 +163,10 @@ func (d *Dispatcher) deliver(ctx context.Context, wh *Webhook, delivery *Deliver
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-OpenRSVP-Signature", signature)
-		req.Header.Set("X-OpenRSVP-Event", delivery.EventType)
-		req.Header.Set("X-OpenRSVP-Delivery", delivery.ID)
-		req.Header.Set("User-Agent", "OpenRSVP-Webhook/1.0")
+		req.Header.Set(legacySignatureHeader, signature)
+		req.Header.Set(legacyEventHeader, delivery.EventType)
+		req.Header.Set(legacyDeliveryHeader, delivery.ID)
+		req.Header.Set("User-Agent", legacyWebhookAgent)
 
 		resp, err := d.client.Do(req)
 		if err != nil {

@@ -1,0 +1,16 @@
+Owl Invites
+
+This project includes software derived from OpenRSVP, an MIT-licensed project:
+
+  Upstream repository: https://github.com/yannkr/openrsvp
+  Preserved baseline: OpenRSVP 1.8.1
+  Preserved commit: 82b8b34ce42a8d0266a8aef56bd8d071bd5df542
+  Copyright (c) 2025 OpenRSVP Contributors
+
+The upstream copyright and MIT license text are preserved in LICENSE. Historical
+upstream release material remains attributed to its original project in
+docs/upstream/openrsvp-history.md. Owl Invites' later modifications and staged
+redevelopment do not imply upstream authorship or endorsement.
+
+Bundled font notices and licenses are recorded in THIRD_PARTY_NOTICES.md and
+web/static/fonts/.

@@ -25,7 +25,7 @@ if [ -z "$build_state" ]; then
   fi
 fi
 
-module=github.com/yannkr/openrsvp/internal/buildinfo
+module=github.com/xxi0xx/owl-invites/internal/buildinfo
 ldflags="-s -w -X ${module}.Version=${version} -X ${module}.Commit=${commit} -X ${module}.BuildState=${build_state}"
 
 mkdir -p "$(dirname "$output")"

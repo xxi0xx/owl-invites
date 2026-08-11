@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="owl-invites-mark-title">
+  <title id="owl-invites-mark-title">Owl Invites owl and envelope mark</title>
+  <path fill="#E54666" d="M10 14h44a6 6 0 0 1 6 6v30a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6V20a6 6 0 0 1 6-6Z"/>
+  <path fill="#FFF1F3" d="m8 20 24 18 24-18v7L32 45 8 27v-7Z"/>
+  <path fill="#292524" d="M17 8 8 18l11-1 5 7h16l5-7 11 1L47 8l-8 5H25l-8-5Z"/>
+  <circle cx="25" cy="24" r="7" fill="#FFF"/>
+  <circle cx="39" cy="24" r="7" fill="#FFF"/>
+  <circle cx="25" cy="24" r="3" fill="#292524"/>
+  <circle cx="39" cy="24" r="3" fill="#292524"/>
+  <path fill="#FBBF24" d="m32 28 5 5-5 4-5-4 5-5Z"/>
+</svg>

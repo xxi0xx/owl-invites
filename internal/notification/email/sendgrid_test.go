@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 func TestSendGridProvider_Send_RequestConstruction(t *testing.T) {

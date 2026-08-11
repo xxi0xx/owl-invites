@@ -15,8 +15,8 @@
 	let token = '';
 
 	// Wording: GET only resolves an eventId (not a name), so scope is phrased
-	// generically — event-scoped vs. all OpenRSVP emails.
-	const scopeLabel = $derived(eventId ? "this event's emails" : 'all OpenRSVP emails');
+	// generically — event-scoped vs. all Owl Invites emails.
+	const scopeLabel = $derived(eventId ? "this event's emails" : 'all Owl Invites emails');
 
 	onMount(async () => {
 		const t = $page.url.searchParams.get('token');
@@ -63,7 +63,7 @@
 </script>
 
 <svelte:head>
-	<title>Unsubscribe — OpenRSVP</title>
+	<title>Unsubscribe — Owl Invites</title>
 </svelte:head>
 
 <div
@@ -72,7 +72,7 @@
 >
 	<div class="w-full max-w-md">
 		<div class="text-center mb-6">
-			<a href="/" class="text-2xl font-bold text-primary">OpenRSVP</a>
+			<a href="/" class="text-2xl font-bold text-primary">Owl Invites</a>
 		</div>
 
 		<div class="bg-surface rounded-xl shadow-lg border border-neutral-200 p-8 text-center">
@@ -166,7 +166,7 @@
 
 		<div class="text-center mt-8">
 			<a href="/" class="text-xs text-neutral-400 hover:text-neutral-500 transition-colors">
-				Powered by OpenRSVP
+				Powered by Owl Invites
 			</a>
 		</div>
 	</div>

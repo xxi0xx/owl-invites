@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 // SendGridProvider sends emails via the SendGrid v3 API using raw HTTP.

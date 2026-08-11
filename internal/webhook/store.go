@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/database"
 )
 
 // Store handles database operations for webhooks and deliveries.

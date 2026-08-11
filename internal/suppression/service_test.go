@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/testutil"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 func newService(t *testing.T) (*Service, database.DB) {

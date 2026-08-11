@@ -37,12 +37,12 @@
 </script>
 
 <svelte:head>
-	<title>Verify -- OpenRSVP</title>
+	<title>Verify -- Owl Invites</title>
 </svelte:head>
 
 <div class="min-h-screen flex items-center justify-center px-4">
 	<div class="w-full max-w-md text-center">
-		<a href="/" class="text-2xl font-bold text-primary">OpenRSVP</a>
+		<a href="/" class="text-2xl font-bold text-primary">Owl Invites</a>
 
 		{#if verifying}
 			<h1 class="font-display mt-4 text-2xl font-semibold text-neutral-900">Verifying your login</h1>

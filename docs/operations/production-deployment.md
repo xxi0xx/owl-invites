@@ -1,7 +1,7 @@
 # Production deployment
 
 > [!WARNING]
-> Gate 3 is a redevelopment milestone, not a stable production release. No
+> Gate 4 is a redevelopment milestone, not a stable production release. No
 > stable Owl Invites image has been published. Never substitute upstream
 > OpenRSVP, `:latest`, a major-only tag, or a major/minor tag.
 
@@ -46,9 +46,8 @@ Production rejects obvious example/placeholder values and values shorter than
 32 bytes.
 
 The Compose service publishes no host port. Attach the reverse proxy to its
-network and proxy to `openrsvp:8080`. Set `TRUSTED_PROXIES` only to the actual
-proxy network(s). The inherited service name is intentionally unchanged in
-Gate 3.
+network and proxy to `owl-invites:8080`. Set `TRUSTED_PROXIES` only to the
+actual proxy network(s).
 
 ## Runtime controls
 
@@ -70,10 +69,10 @@ manifest-list digest. Dependabot proposes reviewed digest updates.
 ## Prove what is running
 
 ```bash
-docker compose -f docker-compose.production.yml exec openrsvp \
+docker compose -f docker-compose.production.yml exec owl-invites \
   owl-invites version --json
-curl --fail http://openrsvp:8080/health
-curl --fail http://openrsvp:8080/health/ready
+curl --fail http://owl-invites:8080/health
+curl --fail http://owl-invites:8080/health/ready
 ```
 
 `/health` is liveness and includes non-secret version/commit/build state.

@@ -37,7 +37,7 @@
 </script>
 
 <svelte:head>
-	<title>My Events -- OpenRSVP</title>
+	<title>My Events -- Owl Invites</title>
 </svelte:head>
 
 <AppShell>

@@ -1,3 +1,10 @@
+# Archived upstream implementation plan
+
+> [!CAUTION]
+> This document is preserved for historical context. It describes the upstream
+> project structure before Owl Invites' staged redevelopment and is not a
+> current implementation plan.
+
 # OpenRSVP — Implementation Plan
 
 ## Context

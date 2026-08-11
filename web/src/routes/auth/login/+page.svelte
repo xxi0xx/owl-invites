@@ -38,13 +38,13 @@
 </script>
 
 <svelte:head>
-	<title>Sign In -- OpenRSVP</title>
+	<title>Sign In -- Owl Invites</title>
 </svelte:head>
 
 <div class="min-h-screen flex items-center justify-center px-4">
 	<div class="w-full max-w-md">
 		<div class="text-center mb-8">
-			<a href="/" class="text-2xl font-bold text-primary">OpenRSVP</a>
+			<a href="/" class="text-2xl font-bold text-primary">Owl Invites</a>
 			<h1 class="font-display mt-4 text-2xl font-semibold text-neutral-900">Sign in to your account</h1>
 			<p class="mt-2 text-neutral-600">Enter your email to receive a magic link</p>
 		</div>

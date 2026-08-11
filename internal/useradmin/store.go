@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/yannkr/openrsvp/internal/auth"
-	"github.com/yannkr/openrsvp/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/auth"
+	"github.com/xxi0xx/owl-invites/internal/database"
 )
 
 type Store struct {

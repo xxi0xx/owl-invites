@@ -94,6 +94,92 @@ func TestAccountInviteExpiryUsesOwlInvitesEnvironmentKey(t *testing.T) {
 	assert.Equal(t, 48*time.Hour, cfg.AccountInviteExpiry)
 }
 
+func TestResolveSQLiteDefaultDSNUsesCanonicalForFreshInstall(t *testing.T) {
+	root := t.TempDir()
+	canonical := filepath.Join(root, "owl-invites.db")
+	legacy := filepath.Join(root, "openrsvp.db")
+
+	got, warning, err := ResolveSQLiteDefaultDSN(canonical, legacy)
+	require.NoError(t, err)
+	assert.Equal(t, canonical, got)
+	assert.Empty(t, warning)
+}
+
+func TestResolveSQLiteDefaultDSNPrefersExistingCanonical(t *testing.T) {
+	root := t.TempDir()
+	canonical := filepath.Join(root, "owl-invites.db")
+	legacy := filepath.Join(root, "openrsvp.db")
+	require.NoError(t, os.WriteFile(canonical, []byte("canonical"), 0o600))
+
+	got, warning, err := ResolveSQLiteDefaultDSN(canonical, legacy)
+	require.NoError(t, err)
+	assert.Equal(t, canonical, got)
+	assert.Empty(t, warning)
+}
+
+func TestResolveSQLiteDefaultDSNDiscoversLegacyWithWarning(t *testing.T) {
+	root := t.TempDir()
+	canonical := filepath.Join(root, "owl-invites.db")
+	legacy := filepath.Join(root, "openrsvp.db")
+	require.NoError(t, os.WriteFile(legacy, []byte("legacy-data"), 0o600))
+
+	got, warning, err := ResolveSQLiteDefaultDSN(canonical, legacy)
+	require.NoError(t, err)
+	assert.Equal(t, legacy, got)
+	assert.Contains(t, warning, legacy)
+	assert.Contains(t, warning, canonical)
+	contents, readErr := os.ReadFile(legacy)
+	require.NoError(t, readErr)
+	assert.Equal(t, "legacy-data", string(contents))
+	_, statErr := os.Stat(canonical)
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestResolveSQLiteDefaultDSNRejectsAmbiguousDefaultsWithoutMutation(t *testing.T) {
+	root := t.TempDir()
+	canonical := filepath.Join(root, "owl-invites.db")
+	legacy := filepath.Join(root, "openrsvp.db")
+	require.NoError(t, os.WriteFile(canonical, []byte("canonical-data"), 0o600))
+	require.NoError(t, os.WriteFile(legacy, []byte("legacy-data"), 0o600))
+
+	_, _, err := ResolveSQLiteDefaultDSN(canonical, legacy)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), canonical)
+	assert.Contains(t, err.Error(), legacy)
+	canonicalContents, canonicalErr := os.ReadFile(canonical)
+	legacyContents, legacyErr := os.ReadFile(legacy)
+	require.NoError(t, canonicalErr)
+	require.NoError(t, legacyErr)
+	assert.Equal(t, "canonical-data", string(canonicalContents))
+	assert.Equal(t, "legacy-data", string(legacyContents))
+}
+
+func TestResolveDatabaseDSNHonorsExplicitValueWithoutPathDiscovery(t *testing.T) {
+	t.Setenv("DB_DSN", "postgres://legacy-role@db.example/existing_database")
+
+	got, warning, err := resolveDatabaseDSN("postgres")
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://legacy-role@db.example/existing_database", got)
+	assert.Empty(t, warning)
+}
+
+func TestResolveDatabaseDSNRejectsExplicitEmptyValue(t *testing.T) {
+	t.Setenv("DB_DSN", "")
+
+	_, _, err := resolveDatabaseDSN("sqlite")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "explicitly set but empty")
+}
+
+func TestApplyInstanceOverridesMigratesOnlyInheritedDefaultName(t *testing.T) {
+	cfg := &Config{InstanceName: "Owl Invites"}
+	cfg.ApplyInstanceOverrides(map[string]string{"instance_name": "OpenRSVP"})
+	assert.Equal(t, "Owl Invites", cfg.InstanceName)
+
+	cfg.ApplyInstanceOverrides(map[string]string{"instance_name": "OpenRSVP Alumni Club"})
+	assert.Equal(t, "OpenRSVP Alumni Club", cfg.InstanceName)
+}
+
 func TestTrustedProxiesRejectsInvalidEntries(t *testing.T) {
 	setInvitationSecret(t)
 	t.Setenv("TRUSTED_PROXIES", "not-a-network")

@@ -1,11 +1,9 @@
-BINARY_NAME := openrsvp
-CLI_NAME := owl-invites
+BINARY_NAME := owl-invites
 BUILD_DIR := ./bin
-CMD_DIR := ./cmd/openrsvp
-CLI_CMD_DIR := ./cmd/owl-invites
+CMD_DIR := ./cmd/owl-invites
 CGO_ENABLED := 1
 
-.PHONY: all build dev test clean lint lint-routes frontend embed
+.PHONY: all build dev test clean lint lint-brand lint-routes frontend embed
 
 all: lint test build
 
@@ -22,8 +20,6 @@ embed: frontend
 build: embed
 	@echo "Building $(BINARY_NAME)..."
 	CGO_ENABLED=$(CGO_ENABLED) ./scripts/build-go.sh $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
-	@echo "Building $(CLI_NAME) recovery CLI..."
-	CGO_ENABLED=$(CGO_ENABLED) ./scripts/build-go.sh $(BUILD_DIR)/$(CLI_NAME) $(CLI_CMD_DIR)
 
 dev:
 	@echo "Running in development mode..."
@@ -37,11 +33,14 @@ clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(BUILD_DIR)
 	rm -rf internal/server/frontend
-	rm -f openrsvp.db
+	rm -f owl-invites.db
 
 lint:
 	@echo "Running linter..."
 	golangci-lint run ./...
+
+lint-brand:
+	@./scripts/lint-brand-residue.sh
 
 lint-routes:
 	@./scripts/lint-api-routes.sh

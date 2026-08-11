@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 func TestTwilioProvider_Send_RequestConstruction(t *testing.T) {

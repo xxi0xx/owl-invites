@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yannkr/openrsvp/internal/auth"
-	"github.com/yannkr/openrsvp/internal/event"
-	"github.com/yannkr/openrsvp/internal/testutil"
+	"github.com/xxi0xx/owl-invites/internal/auth"
+	"github.com/xxi0xx/owl-invites/internal/event"
+	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 // inviteOrgFromCtx returns an OrganizerFromCtx function using the auth package.

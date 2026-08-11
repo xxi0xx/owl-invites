@@ -29,7 +29,7 @@
 </script>
 
 <svelte:head>
-	<title>OpenRSVP</title>
+	<title>Owl Invites</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center bg-neutral-50" aria-label="Loading destination">

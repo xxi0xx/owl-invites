@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yannkr/openrsvp/internal/auth"
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/testutil"
+	"github.com/xxi0xx/owl-invites/internal/auth"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 // setupSeriesHandler returns a series handler with fake auth, plus the backing

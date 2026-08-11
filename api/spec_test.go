@@ -18,4 +18,7 @@ func TestEmbeddedContractIsValidJSONAndServedAsOpenAPI(t *testing.T) {
 	var document map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &document))
 	assert.Equal(t, "3.1.0", document["openapi"])
+	info, ok := document["info"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "Owl Invites API", info["title"])
 }

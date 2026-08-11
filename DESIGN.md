@@ -1,4 +1,4 @@
-# Design System — OpenRSVP
+# Design System — Owl Invites
 
 ## Product Context
 - **What this is:** Self-hosted, open-source RSVP and event invitation platform — the open-source alternative to Evite, Partiful, and Luma.
@@ -13,10 +13,10 @@
 - **Reference sites:** lu.ma (clean, professional, vibrant), partiful.com (social, warm), paperlesspost.com (elegant)
 
 ## Typography
-- **Display/Hero:** Satoshi (Fontshare) — Geometric sans with genuine personality. More distinctive than Inter, not quirky. Used for headings, event titles, hero text, stat values.
-- **Body:** Plus Jakarta Sans (Google Fonts) — Warm, rounded, highly readable. Complements Satoshi's geometry with a friendlier voice. Used for paragraphs, form labels, descriptions, navigation.
+- **Display/Hero:** Plus Jakarta Sans — OFL-licensed, warm, rounded, and highly readable. Used for headings, event titles, hero text, and stat values.
+- **Body:** Plus Jakarta Sans — Used for paragraphs, form labels, descriptions, and navigation.
 - **UI/Labels:** Same as body (Plus Jakarta Sans) at smaller weights.
-- **Data/Tables:** Geist Mono (Fontsource) — Clean monospace with tabular numbers. Used for timestamps, IDs, statistics, and code.
+- **Data/Tables:** Geist Mono — OFL-licensed monospace with tabular numbers. Used for timestamps, IDs, statistics, and code.
 - **Code:** Geist Mono
 - **Loading:** Google Fonts for Plus Jakarta Sans, Fontshare API for Satoshi, Fontsource for Geist Mono. Self-hosted copies bundled in Docker image for offline/air-gapped deployments.
 - **Scale:**

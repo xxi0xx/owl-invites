@@ -14,9 +14,9 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/rs/zerolog"
 
-	apidoc "github.com/yannkr/openrsvp/api"
-	"github.com/yannkr/openrsvp/internal/buildinfo"
-	"github.com/yannkr/openrsvp/internal/security"
+	apidoc "github.com/xxi0xx/owl-invites/api"
+	"github.com/xxi0xx/owl-invites/internal/buildinfo"
+	"github.com/xxi0xx/owl-invites/internal/security"
 )
 
 // routes builds and returns the chi router with all middleware and routes.

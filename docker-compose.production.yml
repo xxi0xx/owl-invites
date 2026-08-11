@@ -23,7 +23,6 @@ services:
       BASE_URL: ${BASE_URL:?BASE_URL is required}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:?TRUSTED_PROXIES is required behind the reverse proxy}
       DB_DRIVER: sqlite
-      DB_DSN: /data/openrsvp.db
       UPLOADS_DIR: /data/uploads
       OWL_INVITES_SECRET_KEY_FILE: /run/secrets/owl_invites_secret_key
       ALLOW_SIGNUPS: "false"

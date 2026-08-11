@@ -82,6 +82,7 @@ func TestSQLiteBackupVerifyRestorePreservesCapabilityAndState(t *testing.T) {
 	assert.NoDirExists(t, wrongUploads)
 
 	restoredDatabase := filepath.Join(root, "restored", "openrsvp.db")
+	canonicalDatabase := filepath.Join(root, "restored", "owl-invites.db")
 	restoredUploads := filepath.Join(root, "restored", "uploads")
 	_, err = backupops.RestoreSQLite(ctx, bundle, restoredDatabase, restoredUploads, restoreSecret)
 	require.NoError(t, err)
@@ -90,7 +91,11 @@ func TestSQLiteBackupVerifyRestorePreservesCapabilityAndState(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "representative-upload", string(upload))
 
-	restoredDB := openSQLite(t, restoredDatabase)
+	selectedDatabase, legacyWarning, err := config.ResolveSQLiteDefaultDSN(canonicalDatabase, restoredDatabase)
+	require.NoError(t, err)
+	assert.Equal(t, restoredDatabase, selectedDatabase)
+	assert.Contains(t, legacyWarning, "legacy SQLite default")
+	restoredDB := openSQLite(t, selectedDatabase)
 	restoredService, err := invitation.NewService(invitation.NewStore(restoredDB), restoreSecret, "https://invites.example", 24*time.Hour, 15*time.Minute)
 	require.NoError(t, err)
 	_, restoredHousehold, err := restoredService.ExchangePrivate(ctx, capability)

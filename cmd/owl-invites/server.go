@@ -32,6 +32,9 @@ func runServer(stderr io.Writer) error {
 	if cfg.Env == "production" {
 		logger = zerolog.New(stderr).With().Timestamp().Logger()
 	}
+	if cfg.DBDSNWarning != "" {
+		logger.Warn().Msg(cfg.DBDSNWarning)
+	}
 
 	build := buildinfo.Current()
 	logger.Info().

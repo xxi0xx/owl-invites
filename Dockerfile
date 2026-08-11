@@ -49,8 +49,7 @@ RUN mkdir -p /app /data /data/uploads /run/secrets && \
     chown -R 10001:10001 /data
 WORKDIR /app
 USER 10001:10001
-ENV DB_DSN=/data/openrsvp.db \
-    UPLOADS_DIR=/data/uploads \
+ENV UPLOADS_DIR=/data/uploads \
     HOME=/nonexistent \
     TMPDIR=/tmp
 EXPOSE 8080

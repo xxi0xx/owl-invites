@@ -125,6 +125,12 @@ See [Gate 5 product maturation](docs/gate-5-product-maturation.md) for the exact
 CSV columns and limits, create-only semantics, presentation security boundary,
 delivery limitations, recovery guarantees, and deferred features.
 
+Forward-looking priorities are maintained in the [product roadmap](ROADMAP.md).
+The next integrated readiness exercise is defined by the
+[release-candidate review plan](docs/release-candidate-review.md); that review
+has not yet been performed and remains separate from any stable-release
+decision.
+
 ## SQLite path compatibility
 
 When `DB_DSN` is explicitly set, Owl Invites uses it exactly. With SQLite and

@@ -142,6 +142,30 @@ export interface InvitationHousehold {
 	guestAnswers: Array<{ guestId: string; questionId: string; answer: string }>;
 }
 
+export interface InvitationImportIssue {
+	row?: number;
+	field?: string;
+	message: string;
+}
+
+export interface InvitationImportHousehold {
+	householdKey: string;
+	householdLabel: string;
+	contactEmail?: string;
+	contactPhone?: string;
+	preferredDelivery: 'email' | 'sms' | 'none';
+	additionalGuestAllowance: number;
+	assignedGuestNames: string[];
+}
+
+export interface InvitationImportPreview {
+	householdCount: number;
+	assignedGuestCount: number;
+	households: InvitationImportHousehold[];
+	errors: InvitationImportIssue[];
+	warnings: InvitationImportIssue[];
+}
+
 export type InviteTemplate = {
 	id: string;
 	name: string;

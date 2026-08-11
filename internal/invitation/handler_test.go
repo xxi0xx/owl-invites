@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,6 +75,56 @@ func postPublicJSON(t *testing.T, handler http.Handler, path string, value any) 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, req)
 	return response
+}
+
+func postCSV(t *testing.T, handler http.Handler, path, contents string) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "households.csv")
+	require.NoError(t, err)
+	_, err = part.Write([]byte(contents))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	req := httptest.NewRequest(http.MethodPost, path, &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	return response
+}
+
+func TestOrganizerImportPreviewCommitAndPublicIsolation(t *testing.T) {
+	f, organizer, _ := organizerHandlerFixture(t)
+	csvData := importHeader +
+		"one,First Household,same@example.com,,email,1,Alex\n" +
+		"one,First Household,same@example.com,,email,1,Bailey\n" +
+		"two,Second Household,same@example.com,,email,0,Casey\n"
+	previewResponse := postCSV(t, organizer,
+		"/events/"+f.eventID+"/invitations/import/preview", csvData)
+	require.Equal(t, http.StatusOK, previewResponse.Code, previewResponse.Body.String())
+	var previewEnvelope struct {
+		Data ImportPreview `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(previewResponse.Body.Bytes(), &previewEnvelope))
+	require.Empty(t, previewEnvelope.Data.Errors)
+	assert.Equal(t, 2, previewEnvelope.Data.HouseholdCount)
+	assert.Equal(t, 3, previewEnvelope.Data.AssignedGuestCount)
+	items, err := f.store.ListByEvent(context.Background(), f.eventID)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+
+	commitResponse := requestJSON(t, organizer, http.MethodPost,
+		"/events/"+f.eventID+"/invitations/import/commit",
+		ImportCommitRequest{Households: previewEnvelope.Data.Households}, nil)
+	require.Equal(t, http.StatusCreated, commitResponse.Code, commitResponse.Body.String())
+	items, err = f.store.ListByEvent(context.Background(), f.eventID)
+	require.NoError(t, err)
+	assert.Len(t, items, 2)
+
+	_, public, _ := publicHandlerFixture(t)
+	publicResponse := postCSV(t, public, "/invitations/import/preview", csvData)
+	assert.Equal(t, http.StatusNotFound, publicResponse.Code,
+		"public invitation routes must never expose organizer import")
 }
 
 func TestCapabilityExchangeDoesNotLeakCapabilityAndSetsScopedCookie(t *testing.T) {

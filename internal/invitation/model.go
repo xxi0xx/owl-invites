@@ -205,3 +205,41 @@ type InvitationMessage struct {
 	Body           string    `json:"body"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
+
+// ImportIssue is a row-addressable validation result shown during CSV preview.
+// Row zero identifies a file/header-level issue.
+type ImportIssue struct {
+	Row     int    `json:"row,omitempty"`
+	Field   string `json:"field,omitempty"`
+	Message string `json:"message"`
+}
+
+// ImportHousehold is normalized, organizer-reviewed import data. HouseholdKey
+// groups rows only for this import and is deliberately never persisted.
+type ImportHousehold struct {
+	HouseholdKey             string   `json:"householdKey"`
+	HouseholdLabel           string   `json:"householdLabel"`
+	ContactEmail             *string  `json:"contactEmail,omitempty"`
+	ContactPhone             *string  `json:"contactPhone,omitempty"`
+	PreferredDelivery        string   `json:"preferredDelivery"`
+	AdditionalGuestAllowance int      `json:"additionalGuestAllowance"`
+	AssignedGuestNames       []string `json:"assignedGuestNames"`
+}
+
+type ImportPreview struct {
+	HouseholdCount     int               `json:"householdCount"`
+	AssignedGuestCount int               `json:"assignedGuestCount"`
+	Households         []ImportHousehold `json:"households"`
+	Errors             []ImportIssue     `json:"errors"`
+	Warnings           []ImportIssue     `json:"warnings"`
+}
+
+type ImportCommitRequest struct {
+	Households []ImportHousehold `json:"households"`
+}
+
+type ImportCommitResult struct {
+	HouseholdCount     int      `json:"householdCount"`
+	AssignedGuestCount int      `json:"assignedGuestCount"`
+	InvitationIDs      []string `json:"invitationIds"`
+}

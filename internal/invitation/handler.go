@@ -47,12 +47,70 @@ func (h *Handler) OrganizerInvitationRoutes() chi.Router {
 	r.Use(h.authMiddleware)
 	r.Get("/", h.list)
 	r.Post("/", h.create)
+	r.Get("/import/template", h.importTemplate)
+	r.Post("/import/preview", h.previewImport)
+	r.Post("/import/commit", h.commitImport)
 	r.Get("/{invitationId}", h.get)
 	r.Post("/{invitationId}/deliver", h.deliver)
 	r.Post("/{invitationId}/rotate", h.rotate)
 	r.Post("/{invitationId}/revoke", h.revoke)
 	r.Post("/messages", h.message)
 	return r
+}
+
+func (h *Handler) importTemplate(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := h.eventActor(r); !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="owl-invites-household-import-template.csv"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(importTemplateCSV))
+}
+
+func (h *Handler) previewImport(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := h.eventActor(r); !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	// Multipart framing adds modest overhead beyond the file itself. The parser
+	// still independently enforces MaxImportBytes on the actual CSV payload.
+	r.Body = http.MaxBytesReader(w, r.Body, MaxImportBytes+(64<<10))
+	if err := r.ParseMultipartForm(MaxImportBytes); err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "import_too_large", "CSV upload exceeds the import size limit")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "CSV file is required")
+		return
+	}
+	defer func() { _ = file.Close() }()
+	preview, err := PreviewImportCSV(file)
+	if err != nil {
+		h.internal(w, err, "preview invitation import")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+}
+
+func (h *Handler) commitImport(w http.ResponseWriter, r *http.Request) {
+	eventID, userID, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req ImportCommitRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	result, err := h.service.CommitImport(r.Context(), eventID, userID, req)
+	if h.writeServiceError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
 // OrganizerOpenEnrollmentRoutes is mounted below

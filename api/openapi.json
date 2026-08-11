@@ -316,6 +316,57 @@
         "required": ["sent"],
         "properties": { "sent": { "type": "integer", "minimum": 0 } }
       },
+      "InvitationImportIssue": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "row": { "type": "integer", "minimum": 0 },
+          "field": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      },
+      "InvitationImportHousehold": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["householdKey", "householdLabel", "preferredDelivery", "additionalGuestAllowance", "assignedGuestNames"],
+        "properties": {
+          "householdKey": { "type": "string", "maxLength": 100, "description": "Import-only grouping value; never persisted as invitation identity." },
+          "householdLabel": { "type": "string", "maxLength": 200 },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" },
+          "preferredDelivery": { "type": "string", "enum": ["email", "sms", "none"] },
+          "additionalGuestAllowance": { "type": "integer", "minimum": 0, "maximum": 50 },
+          "assignedGuestNames": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "type": "string", "maxLength": 200 } }
+        }
+      },
+      "InvitationImportPreview": {
+        "type": "object",
+        "required": ["householdCount", "assignedGuestCount", "households", "errors", "warnings"],
+        "properties": {
+          "householdCount": { "type": "integer", "minimum": 0 },
+          "assignedGuestCount": { "type": "integer", "minimum": 0 },
+          "households": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationImportHousehold" } },
+          "errors": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationImportIssue" } },
+          "warnings": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationImportIssue" } }
+        }
+      },
+      "InvitationImportCommitRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["households"],
+        "properties": {
+          "households": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "$ref": "#/components/schemas/InvitationImportHousehold" } }
+        }
+      },
+      "InvitationImportCommitResult": {
+        "type": "object",
+        "required": ["householdCount", "assignedGuestCount", "invitationIds"],
+        "properties": {
+          "householdCount": { "type": "integer", "minimum": 1 },
+          "assignedGuestCount": { "type": "integer", "minimum": 1 },
+          "invitationIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
       "OpenEnrollmentRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -511,6 +562,32 @@
         "security": [{ "sessionCookie": [] }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateInvitationRequest" } } } },
         "responses": { "201": { "description": "Private invitation created", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/CreateInvitationResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/import/template": {
+      "get": {
+        "operationId": "downloadInvitationImportTemplate",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Household-aware CSV import template", "content": { "text/csv": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/import/preview": {
+      "post": {
+        "operationId": "previewInvitationImport",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "multipart/form-data": { "schema": { "type": "object", "required": ["file"], "properties": { "file": { "type": "string", "format": "binary" } } } } } },
+        "responses": { "200": { "description": "Normalized non-persisting import preview", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationImportPreview" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/import/commit": {
+      "post": {
+        "operationId": "commitInvitationImport",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationImportCommitRequest" } } } },
+        "responses": { "201": { "description": "All previewed households created atomically without delivery", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationImportCommitResult" } } } } } } }
       }
     },
     "/events/{eventId}/invitations/{invitationId}": {

@@ -226,6 +226,40 @@ export type InvitationMessageResult = {
 	"sent": number;
 };
 
+export type InvitationImportIssue = {
+	"row"?: number;
+	"field"?: string;
+	"message": string;
+};
+
+export type InvitationImportHousehold = {
+	"householdKey": string;
+	"householdLabel": string;
+	"contactEmail"?: string;
+	"contactPhone"?: string;
+	"preferredDelivery": "email" | "sms" | "none";
+	"additionalGuestAllowance": number;
+	"assignedGuestNames": Array<string>;
+};
+
+export type InvitationImportPreview = {
+	"householdCount": number;
+	"assignedGuestCount": number;
+	"households": Array<InvitationImportHousehold>;
+	"errors": Array<InvitationImportIssue>;
+	"warnings": Array<InvitationImportIssue>;
+};
+
+export type InvitationImportCommitRequest = {
+	"households": Array<InvitationImportHousehold>;
+};
+
+export type InvitationImportCommitResult = {
+	"householdCount": number;
+	"assignedGuestCount": number;
+	"invitationIds": Array<string>;
+};
+
 export type OpenEnrollmentRequest = {
 	"capability": string;
 	"label": string;
@@ -440,6 +474,31 @@ export interface Operations {
 	"data": CreateInvitationResult;
 };
 	};
+	downloadInvitationImportTemplate: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: void;
+	};
+	previewInvitationImport: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: {
+	"data": InvitationImportPreview;
+};
+	};
+	commitInvitationImport: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: InvitationImportCommitRequest;
+		response: {
+	"data": InvitationImportCommitResult;
+};
+	};
 	getInvitation: {
 		parameters: {
 	"eventId": string;
@@ -580,6 +639,9 @@ export const operationDefinitions = {
 	inviteEventCohost: {"method":"POST","path":"/events/{eventId}/cohosts","pathParams":["eventId"],"queryParams":[]},
 	listInvitations: {"method":"GET","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
 	createInvitation: {"method":"POST","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
+	downloadInvitationImportTemplate: {"method":"GET","path":"/events/{eventId}/invitations/import/template","pathParams":["eventId"],"queryParams":[]},
+	previewInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/preview","pathParams":["eventId"],"queryParams":[]},
+	commitInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/commit","pathParams":["eventId"],"queryParams":[]},
 	getInvitation: {"method":"GET","path":"/events/{eventId}/invitations/{invitationId}","pathParams":["eventId","invitationId"],"queryParams":[]},
 	deliverInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/deliver","pathParams":["eventId","invitationId"],"queryParams":[]},
 	rotateInvitationCapability: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/rotate","pathParams":["eventId","invitationId"],"queryParams":[]},

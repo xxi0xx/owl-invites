@@ -27,6 +27,13 @@ type Store struct {
 
 func NewStore(db database.DB) *Store { return &Store{db: db} }
 
+// ImportRecord is one prevalidated household to insert as part of an atomic
+// import. It intentionally contains no import grouping key.
+type ImportRecord struct {
+	Invitation *Invitation
+	Guests     []*Guest
+}
+
 const invitationColumns = `id, event_id, label, contact_email, contact_phone,
 	preferred_delivery_method, additional_guest_allowance, source,
 	open_enrollment_id, access_id, token_version, created_by_user_id,
@@ -96,6 +103,69 @@ func (s *Store) Create(ctx context.Context, invitation *Invitation, guests []*Gu
 		guest.InvitationID = invitation.ID
 		guest.Attendance = AttendancePending
 		guest.CreatedAt, guest.UpdatedAt = parsed, parsed
+	}
+	return nil
+}
+
+// Import creates every household, response, assigned guest, and guest response
+// in one transaction. A failure anywhere rolls the complete import back.
+func (s *Store) Import(ctx context.Context, records []ImportRecord) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin invitation import: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, record := range records {
+		invitation := record.Invitation
+		var email, normalizedEmail, phone, normalizedPhone any
+		if invitation.ContactEmail != nil {
+			email = *invitation.ContactEmail
+			normalizedEmail = normalizeEmail(*invitation.ContactEmail)
+		}
+		if invitation.ContactPhone != nil {
+			phone = *invitation.ContactPhone
+			normalizedPhone = normalizePhone(*invitation.ContactPhone)
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO invitations (
+			id, event_id, label, contact_email, normalized_contact_email,
+			contact_phone, normalized_contact_phone, preferred_delivery_method,
+			additional_guest_allowance, source, open_enrollment_id, access_id,
+			token_version, created_by_user_id, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			invitation.ID, invitation.EventID, invitation.Label, email, normalizedEmail,
+			phone, normalizedPhone, invitation.PreferredDeliveryMethod,
+			invitation.AdditionalGuestAllowance, invitation.Source,
+			invitation.OpenEnrollmentID, invitation.AccessID, invitation.TokenVersion,
+			invitation.CreatedByUserID, now, now)
+		if err != nil {
+			return fmt.Errorf("import invitation: %w", err)
+		}
+
+		responseID := uuid.Must(uuid.NewV7()).String()
+		if _, err = tx.ExecContext(ctx, `INSERT INTO rsvp_responses (
+			id, invitation_id, version, created_at, updated_at
+		) VALUES (?, ?, 1, ?, ?)`, responseID, invitation.ID, now, now); err != nil {
+			return fmt.Errorf("import response: %w", err)
+		}
+		for _, guest := range record.Guests {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO guests (
+				id, invitation_id, name, origin, sort_order, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)`, guest.ID, invitation.ID, guest.Name,
+				guest.Origin, guest.SortOrder, now, now); err != nil {
+				return fmt.Errorf("import guest: %w", err)
+			}
+			if _, err = tx.ExecContext(ctx, `INSERT INTO guest_responses (
+				id, rsvp_response_id, guest_id, attendance, created_at, updated_at
+			) VALUES (?, ?, ?, 'pending', ?, ?)`, uuid.Must(uuid.NewV7()).String(),
+				responseID, guest.ID, now, now); err != nil {
+				return fmt.Errorf("import guest response: %w", err)
+			}
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit invitation import: %w", err)
 	}
 	return nil
 }

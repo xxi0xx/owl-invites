@@ -90,7 +90,7 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 	await page.getByRole('button', { name: 'Save Invite Design' }).click();
 	await expect(page.getByText('Design saved', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Publish & View Dashboard' }).click();
-	await expect(page).toHaveURL(new RegExp(`/events/${eventID}$`));
+	await expect(page).toHaveURL(invitationsURL);
 
 	// Explicit household grouping; every household intentionally shares a contact.
 	const csv = [

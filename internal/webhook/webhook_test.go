@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/testutil"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 // createParentEvent inserts the minimal parent records (organizer, event)

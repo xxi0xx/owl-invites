@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yannkr/openrsvp/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/config"
 )
 
 func TestLatestMigrationVersion(t *testing.T) {

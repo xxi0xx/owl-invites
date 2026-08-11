@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 // TwilioProvider sends SMS messages via the Twilio REST API using raw HTTP.

@@ -8,14 +8,14 @@ import (
 	"io"
 	"os"
 
-	"github.com/yannkr/openrsvp/internal/admincli"
-	"github.com/yannkr/openrsvp/internal/auth"
-	backupops "github.com/yannkr/openrsvp/internal/backup"
-	"github.com/yannkr/openrsvp/internal/buildinfo"
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/instanceconfig"
-	"github.com/yannkr/openrsvp/internal/secretkey"
+	"github.com/xxi0xx/owl-invites/internal/admincli"
+	"github.com/xxi0xx/owl-invites/internal/auth"
+	backupops "github.com/xxi0xx/owl-invites/internal/backup"
+	"github.com/xxi0xx/owl-invites/internal/buildinfo"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/instanceconfig"
+	"github.com/xxi0xx/owl-invites/internal/secretkey"
 )
 
 func main() {

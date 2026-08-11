@@ -1,4 +1,4 @@
-module github.com/yannkr/openrsvp
+module github.com/xxi0xx/owl-invites
 
 go 1.25.0
 

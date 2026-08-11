@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/auth"
-	"github.com/yannkr/openrsvp/internal/instanceconfig"
+	"github.com/xxi0xx/owl-invites/internal/auth"
+	"github.com/xxi0xx/owl-invites/internal/instanceconfig"
 )
 
 var ErrUserNotFound = errors.New("user not found")

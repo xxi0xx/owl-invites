@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/xxi0xx/owl-invites/internal/errcode"
 )
 
 // Field length limits.

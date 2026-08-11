@@ -7,7 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
-	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/xxi0xx/owl-invites/internal/errcode"
 )
 
 // Handler provides HTTP handlers for admin statistics endpoints.

@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rs/zerolog"
-	"github.com/yannkr/openrsvp/internal/errcode"
+	"github.com/xxi0xx/owl-invites/internal/errcode"
 )
 
 // SeriesService contains the business logic for recurring event series.

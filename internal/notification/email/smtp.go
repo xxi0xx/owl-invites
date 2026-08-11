@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 // SMTPProvider sends emails via SMTP.

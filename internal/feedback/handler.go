@@ -8,8 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog"
 
-	"github.com/yannkr/openrsvp/internal/errcode"
-	"github.com/yannkr/openrsvp/internal/httpx"
+	"github.com/xxi0xx/owl-invites/internal/errcode"
+	"github.com/xxi0xx/owl-invites/internal/httpx"
 )
 
 // OrganizerFromCtx extracts the organizer email from the request context.

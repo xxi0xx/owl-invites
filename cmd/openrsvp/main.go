@@ -9,10 +9,10 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/yannkr/openrsvp/internal/buildinfo"
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/server"
+	"github.com/xxi0xx/owl-invites/internal/buildinfo"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/server"
 )
 
 func main() {

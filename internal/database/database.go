@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/yannkr/openrsvp/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/config"
 )
 
 // DB is the database interface used throughout the application. It wraps the

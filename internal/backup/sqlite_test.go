@@ -12,12 +12,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	backupops "github.com/yannkr/openrsvp/internal/backup"
-	"github.com/yannkr/openrsvp/internal/config"
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/invitation"
-	"github.com/yannkr/openrsvp/internal/question"
-	"github.com/yannkr/openrsvp/internal/testutil"
+	backupops "github.com/xxi0xx/owl-invites/internal/backup"
+	"github.com/xxi0xx/owl-invites/internal/config"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/invitation"
+	"github.com/xxi0xx/owl-invites/internal/question"
+	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 const restoreSecret = "4c64fb646f28c3cf57d320675a546e290173f4ab91786764"

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/database"
 )
 
 // SeriesStore handles database operations for event series.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yannkr/openrsvp/internal/notification"
+	"github.com/xxi0xx/owl-invites/internal/notification"
 )
 
 // SESProvider sends emails via Amazon SES using the SES SMTP interface.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/yannkr/openrsvp/internal/auth"
+	"github.com/xxi0xx/owl-invites/internal/auth"
 )
 
 type AccountInvite struct {

@@ -16,9 +16,9 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/yannkr/openrsvp/internal/buildinfo"
-	"github.com/yannkr/openrsvp/internal/database"
-	"github.com/yannkr/openrsvp/internal/secretkey"
+	"github.com/xxi0xx/owl-invites/internal/buildinfo"
+	"github.com/xxi0xx/owl-invites/internal/database"
+	"github.com/xxi0xx/owl-invites/internal/secretkey"
 )
 
 // CreateSQLite creates a restricted directory bundle containing a SQLite

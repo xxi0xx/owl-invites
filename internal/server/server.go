@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -57,6 +58,7 @@ type Server struct {
 	scheduler             *scheduler.Scheduler
 	securityMw            *security.Middleware
 	uploadsDir            string
+	shuttingDown          atomic.Bool
 }
 
 // New creates a new Server instance.
@@ -566,6 +568,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 // Start begins listening and blocks until the provided context is cancelled.
 // It performs a graceful shutdown when the context is done.
 func (s *Server) Start(ctx context.Context) error {
+	s.shuttingDown.Store(false)
 	// Start background scheduler.
 	s.scheduler.Start(ctx)
 
@@ -580,19 +583,19 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 
 	select {
-	case err := <-errCh:
+	case err, ok := <-errCh:
+		s.shuttingDown.Store(true)
+		s.stopBackgroundServices()
+		if !ok || err == nil {
+			return nil
+		}
 		return fmt.Errorf("server error: %w", err)
 	case <-ctx.Done():
+		s.shuttingDown.Store(true)
 		s.logger.Info().Msg("shutting down server")
 	}
 
-	// Stop scheduler first.
-	s.scheduler.Stop()
-
-	// Stop rate limiter cleanup goroutines.
-	s.securityMw.AuthRateLimiter.Stop()
-	s.securityMw.RSVPRateLimiter.Stop()
-	s.securityMw.GeneralRateLimiter.Stop()
+	s.stopBackgroundServices()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -603,4 +606,11 @@ func (s *Server) Start(ctx context.Context) error {
 
 	s.logger.Info().Msg("server stopped gracefully")
 	return nil
+}
+
+func (s *Server) stopBackgroundServices() {
+	s.scheduler.Stop()
+	s.securityMw.AuthRateLimiter.Stop()
+	s.securityMw.RSVPRateLimiter.Stop()
+	s.securityMw.GeneralRateLimiter.Stop()
 }

@@ -140,6 +140,20 @@ func TestSMSPreferredInvitationCannotSilentlySendEmail(t *testing.T) {
 	assert.Equal(t, 0, deliveryAttempts)
 }
 
+func TestManualDeliveryRemainsAvailableForEmailInvitation(t *testing.T) {
+	f := newServiceFixture(t)
+	deliveryAttempts := 0
+	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error {
+		deliveryAttempts++
+		return nil
+	})
+	created := f.create("Manual resend", "resend@example.com", 0, "Guest")
+	assert.Equal(t, DeliveryNotRequested, created.Delivery.Status)
+
+	require.NoError(t, f.service.Deliver(context.Background(), created.Invitation.ID))
+	assert.Equal(t, 1, deliveryAttempts)
+}
+
 func TestAllowanceRequiredQuestionsAndOptimisticVersion(t *testing.T) {
 	f := newServiceFixture(t)
 	created := f.create("Household", "household@example.com", 1, "Assigned One", "Assigned Two")

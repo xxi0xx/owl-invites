@@ -1,0 +1,319 @@
+name: Product Verification
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  release-policy:
+    name: Release gate policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test release tag and ancestry policy
+        run: bash scripts/test-release-policy.sh
+
+  frontend:
+    name: Frontend contract & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci
+      - run: cd web && npm run check
+      - name: Verify frontend routes match the supported API contract
+        run: bash scripts/lint-api-routes.sh
+      - name: Audit production npm dependencies
+        run: cd web && npm audit --omit=dev --audit-level=high
+      - run: cd web && npm run build
+
+  backend-sqlite:
+    name: Backend (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+          cache: true
+      - name: Install CGO compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc
+      - run: go mod download
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - run: go vet ./...
+      - name: Run complete SQLite suite
+        run: go test ./...
+      - name: Run SQLite migration tests explicitly
+        run: go test ./internal/invitation -run 'Migration|Rollback' -count=1
+      - name: Run SQLite suite with race detector and coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Print total coverage
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+      - name: Build server and operator CLI
+        run: |
+          CGO_ENABLED=1 bash scripts/build-go.sh /tmp/openrsvp ./cmd/openrsvp
+          CGO_ENABLED=1 bash scripts/build-go.sh /tmp/owl-invites ./cmd/owl-invites
+          /tmp/openrsvp version --json
+          /tmp/owl-invites version --json
+
+  backend-postgres:
+    name: Backend (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: openrsvp
+          POSTGRES_PASSWORD: openrsvp
+          POSTGRES_DB: openrsvp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openrsvp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://openrsvp:openrsvp@localhost:5432/openrsvp_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+          cache: true
+      - name: Install CGO compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc
+      - run: go mod download
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - name: Run complete PostgreSQL suite
+        run: go test ./...
+      - name: Run PostgreSQL migration tests explicitly
+        run: go test ./internal/invitation -run 'Migration|Rollback' -count=1
+      - name: Run PostgreSQL suite with race detector
+        run: go test -race ./...
+
+  postgres-restore:
+    name: PostgreSQL backup & restore
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: openrsvp
+          POSTGRES_PASSWORD: openrsvp
+          POSTGRES_DB: openrsvp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openrsvp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+          cache: true
+      - name: Install CGO and PostgreSQL client tools
+        run: sudo apt-get update && sudo apt-get install -y gcc postgresql-client
+      - run: go mod download
+      - name: Build recovery drill binaries
+        env:
+          VERSION: ci
+          COMMIT: ${{ github.sha }}
+          BUILD_STATE: clean
+        run: |
+          mkdir -p internal/server/frontend bin
+          touch internal/server/frontend/index.html
+          CGO_ENABLED=1 bash scripts/build-go.sh bin/openrsvp ./cmd/openrsvp
+          CGO_ENABLED=1 bash scripts/build-go.sh bin/owl-invites ./cmd/owl-invites
+      - name: Destroy and restore PostgreSQL application state
+        env:
+          PG_ADMIN_DSN: postgres://openrsvp:openrsvp@127.0.0.1:5432/postgres?sslmode=disable
+          SERVER_BINARY: ./bin/openrsvp
+          CLI_BINARY: ./bin/owl-invites
+        run: bash scripts/test-postgres-restore.sh
+
+  e2e:
+    name: Browser invitation flows (Chromium + Mailpit)
+    runs-on: ubuntu-latest
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.30.0
+        ports:
+          - 1025:1025
+          - 8025:8025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+          cache: true
+      - name: Install build and browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+          cd web
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Build full application
+        run: |
+          cd web
+          npm run check
+          npm run build
+          cd ..
+          rm -rf internal/server/frontend
+          mkdir -p internal/server/frontend
+          cp -R web/build/. internal/server/frontend/
+          mkdir -p bin
+          CGO_ENABLED=1 bash scripts/build-go.sh bin/openrsvp ./cmd/openrsvp
+      - name: Start application
+        env:
+          ENV: development
+          PORT: '8080'
+          BASE_URL: http://127.0.0.1:8080
+          DB_DRIVER: sqlite
+          DB_DSN: ${{ runner.temp }}/owl-invites-e2e.db
+          UPLOADS_DIR: ${{ runner.temp }}/owl-invites-uploads
+          ALLOW_SIGNUPS: 'false'
+          OWL_INVITES_BOOTSTRAP_TOKEN: gate-2-browser-bootstrap
+          OWL_INVITES_SECRET_KEY: gate-2-browser-secret-key-at-least-32-bytes
+          NOTIFICATION_EMAIL_PROVIDER: smtp
+          SMTP_HOST: 127.0.0.1
+          SMTP_PORT: '1025'
+          SMTP_FROM: noreply@owl-invites.test
+        run: |
+          mkdir -p "$UPLOADS_DIR"
+          ./bin/openrsvp >"$RUNNER_TEMP/owl-invites-e2e.log" 2>&1 &
+          echo $! >"$RUNNER_TEMP/owl-invites-e2e.pid"
+      - name: Wait for application and Mailpit
+        run: |
+          curl --fail --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/health
+          curl --fail --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:8025/readyz
+      - name: Run browser acceptance test
+        env:
+          BASE_URL: http://127.0.0.1:8080
+          MAILPIT_URL: http://127.0.0.1:8025
+          OWL_INVITES_E2E_BOOTSTRAP_TOKEN: gate-2-browser-bootstrap
+        run: cd web && npm run test:e2e
+      - name: Print application log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/owl-invites-e2e.log"
+
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.12.2
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+      - name: Create frontend placeholder for go:embed
+        run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  docker:
+    name: Production container
+    runs-on: ubuntu-latest
+    needs: [release-policy, frontend, backend-sqlite, backend-postgres, postgres-restore, e2e, lint, govulncheck]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Build both release architectures
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+            BUILD_STATE=clean
+            SOURCE_URL=https://github.com/${{ github.repository }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Load amd64 acceptance image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: owl-invites:gate3-amd64
+          platforms: linux/amd64
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+            BUILD_STATE=clean
+            SOURCE_URL=https://github.com/${{ github.repository }}
+          provenance: false
+          cache-from: type=gha
+      - name: Load arm64 acceptance image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: owl-invites:gate3-arm64
+          platforms: linux/arm64
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+            BUILD_STATE=clean
+            SOURCE_URL=https://github.com/${{ github.repository }}
+          provenance: false
+          cache-from: type=gha
+      - name: Verify amd64 frontend, identity, hardening, and SIGTERM
+        env:
+          IMAGE: owl-invites:gate3-amd64
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EXPECTED_ARCH: amd64
+        run: bash scripts/test-production-container.sh
+      - name: Verify arm64 frontend, identity, hardening, and SIGTERM
+        env:
+          IMAGE: owl-invites:gate3-arm64
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EXPECTED_ARCH: arm64
+        run: bash scripts/test-production-container.sh

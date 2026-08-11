@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -117,7 +119,70 @@ func TestInvitationSecretIsRequiredRestoreMaterial(t *testing.T) {
 	assert.Contains(t, err.Error(), "OWL_INVITES_SECRET_KEY")
 }
 
+func TestInvitationSecretLoadsFromFileAndTrimsOneLineEnding(t *testing.T) {
+	unsetEnv(t, "OWL_INVITES_SECRET_KEY")
+	secret := "file-backed-restore-secret-key-with-32-bytes"
+	path := filepath.Join(t.TempDir(), "owl-invites-secret")
+	require.NoError(t, os.WriteFile(path, []byte(secret+"\r\n"), 0o600))
+	t.Setenv("OWL_INVITES_SECRET_KEY_FILE", path)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, secret, cfg.InvitationSecretKey)
+}
+
+func TestInvitationSecretRejectsBothSources(t *testing.T) {
+	t.Setenv("OWL_INVITES_SECRET_KEY", "direct-secret-key-material-at-least-32-bytes")
+	t.Setenv("OWL_INVITES_SECRET_KEY_FILE", filepath.Join(t.TempDir(), "secret"))
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one")
+	assert.NotContains(t, err.Error(), "direct-secret-key-material")
+}
+
+func TestInvitationSecretRejectsMissingFileWithoutLeakingMaterial(t *testing.T) {
+	unsetEnv(t, "OWL_INVITES_SECRET_KEY")
+	path := filepath.Join(t.TempDir(), "missing-secret")
+	t.Setenv("OWL_INVITES_SECRET_KEY_FILE", path)
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read OWL_INVITES_SECRET_KEY_FILE")
+}
+
+func TestInvitationSecretRejectsProductionPlaceholder(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("OWL_INVITES_SECRET_KEY", "change-me-to-a-real-production-secret-key")
+	unsetEnv(t, "OWL_INVITES_SECRET_KEY_FILE")
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "placeholder")
+	assert.NotContains(t, err.Error(), "change-me")
+}
+
+func TestInvitationSecretFilePreservesNonNewlineWhitespace(t *testing.T) {
+	got := trimOneTrailingLineEnding("  secret material with deliberate spaces  \n")
+	assert.Equal(t, "  secret material with deliberate spaces  ", got)
+	assert.Equal(t, "secret\n", trimOneTrailingLineEnding("secret\n\n"))
+}
+
 func setInvitationSecret(t *testing.T) {
 	t.Helper()
-	t.Setenv("OWL_INVITES_SECRET_KEY", "test-only-owl-invites-secret-key-32-bytes")
+	t.Setenv("OWL_INVITES_SECRET_KEY", "d2c7b318a9454f11a08be6392f64d38f7de95568")
+	unsetEnv(t, "OWL_INVITES_SECRET_KEY_FILE")
+}
+
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+	value, existed := os.LookupEnv(name)
+	require.NoError(t, os.Unsetenv(name))
+	t.Cleanup(func() {
+		if existed {
+			_ = os.Setenv(name, value)
+		} else {
+			_ = os.Unsetenv(name)
+		}
+	})
 }

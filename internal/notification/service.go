@@ -65,11 +65,14 @@ type Options struct {
 
 // Service dispatches notifications via registered providers and logs results.
 type Service struct {
-	registry *Registry
-	db       database.DB
-	logger   zerolog.Logger
-	opts     Options
+	registry  *Registry
+	db        database.DB
+	logger    zerolog.Logger
+	opts      Options
+	retryWait func(context.Context, time.Duration) error
 }
+
+const maxSendAttempts = 3
 
 // NewService creates a new notification Service with default (disabled)
 // options: no open-tracking pixel, no suppression gate, no unsubscribe footer.
@@ -81,10 +84,11 @@ func NewService(registry *Registry, db database.DB, logger zerolog.Logger) *Serv
 // options for open tracking, base URL, and the optional suppression checker.
 func NewServiceWithOptions(registry *Registry, db database.DB, logger zerolog.Logger, opts Options) *Service {
 	return &Service{
-		registry: registry,
-		db:       db,
-		logger:   logger,
-		opts:     opts,
+		registry:  registry,
+		db:        db,
+		logger:    logger,
+		opts:      opts,
+		retryWait: waitForRetry,
 	}
 }
 
@@ -118,25 +122,27 @@ func (s *Service) Send(ctx context.Context, eventID, invitationID string, ch Cha
 	}
 
 	// Attempt delivery with retry on transient errors.
-	const maxAttempts = 3
 	var sendErr error
 	var result *SendResult
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	for attempt := 1; attempt <= maxSendAttempts; attempt++ {
 		result, sendErr = provider.Send(ctx, msg)
 		if sendErr == nil {
 			break
 		}
 
-		if attempt < maxAttempts {
+		if attempt < maxSendAttempts {
 			// Check if context is already cancelled before retrying.
 			if ctx.Err() != nil {
 				s.logger.Warn().Err(ctx.Err()).Int("attempt", attempt).Msg("context cancelled, skipping retry")
 				break
 			}
 
-			backoff := time.Duration(1<<(attempt-1)) * time.Second // 1s, 2s, 4s
+			backoff := time.Duration(1<<(attempt-1)) * time.Second // 1s, then 2s between three attempts
 			s.logger.Warn().Err(sendErr).Int("attempt", attempt).Dur("backoff", backoff).Msg("notification send failed, retrying")
-			time.Sleep(backoff)
+			if err := s.retryWait(ctx, backoff); err != nil {
+				s.logger.Warn().Err(err).Int("attempt", attempt).Msg("notification retry interrupted")
+				break
+			}
 		}
 	}
 
@@ -159,6 +165,17 @@ func (s *Service) Send(ctx context.Context, eventID, invitationID string, ch Cha
 	}
 
 	return nil
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // isSuppressedEmail reports whether an email recipient is suppressed. It

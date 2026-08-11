@@ -36,6 +36,7 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 
 	// Fresh setup, installed-app root routing, and magic-link login.
 	await page.goto('/');
+	await page.waitForURL(/\/(?:setup|auth\/login)$/);
 	if (/\/setup$/.test(page.url())) {
 		await page.getByLabel('Bootstrap token').fill(BOOTSTRAP_TOKEN);
 		await page.getByLabel(/^Name/).fill('Gate Five Admin');

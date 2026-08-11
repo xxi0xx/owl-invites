@@ -143,7 +143,7 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 
 	// Organizer response/search/filter and accurate provider-acceptance status.
 	await page.goto(invitationsURL);
-	await page.getByLabel('Search').fill('Casey Smith');
+	await page.getByRole('textbox', { name: 'Search', exact: true }).fill('Casey Smith');
 	await page.getByRole('button', { name: 'Apply' }).click();
 	await expect(page.getByRole('heading', { name: 'Smith Family' })).toBeVisible();
 	await expect(page.getByText('1 results · 3 guests · 2 attending · 0 pending')).toBeVisible();

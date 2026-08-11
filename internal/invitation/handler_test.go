@@ -94,7 +94,7 @@ func TestCapabilityExchangeDoesNotLeakCapabilityAndSetsScopedCookie(t *testing.T
 	assert.True(t, cookies[0].HttpOnly)
 	assert.Equal(t, http.SameSiteStrictMode, cookies[0].SameSite)
 
-	tampered := capability[:len(capability)-1] + "A"
+	tampered := tamperCapability(capability)
 	invalid := postPublicJSON(t, handler, "/invitations/exchange", map[string]string{"capability": tampered})
 	assert.Equal(t, http.StatusUnauthorized, invalid.Code)
 	assert.Equal(t, "no-store", invalid.Header().Get("Cache-Control"))

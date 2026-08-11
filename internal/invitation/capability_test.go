@@ -24,9 +24,17 @@ func TestCapabilityDomainsAndVersionsAreIsolated(t *testing.T) {
 	_, _, err = signer.ParsePrivate(signer.Private("opaque-selector", 4))
 	require.NoError(t, err)
 
-	tampered := private[:len(private)-1] + "A"
+	tampered := tamperCapability(private)
 	_, _, err = signer.ParsePrivate(tampered)
 	assert.ErrorIs(t, err, ErrInvalidCapability)
+}
+
+func tamperCapability(raw string) string {
+	replacement := byte('A')
+	if raw[len(raw)-1] == replacement {
+		replacement = 'B'
+	}
+	return raw[:len(raw)-1] + string(replacement)
 }
 
 func TestCapabilitySignerRequiresRestoreGradeSecret(t *testing.T) {

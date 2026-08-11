@@ -93,6 +93,9 @@ docker exec "$container" owl-invites version --json > "$work/version.json"
 jq -e --arg commit "$EXPECTED_COMMIT" '.version == "ci" and .commit == $commit and .buildState == "clean"' "$work/version.json" >/dev/null
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$EXPECTED_COMMIT"
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$IMAGE")" = ci
+test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$IMAGE")" = "Owl Invites"
+test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.description"}}' "$IMAGE")" = "Self-hosted invitation and RSVP management"
+test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$IMAGE")" = "https://github.com/xxi0xx/owl-invites"
 test "$(docker image inspect --format '{{.Architecture}}' "$IMAGE")" = "$EXPECTED_ARCH"
 docker exec "$container" test -x /usr/local/bin/owl-invites
 if docker exec "$container" test -e /usr/local/bin/openrsvp; then

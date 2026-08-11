@@ -116,6 +116,18 @@ grep -Fq 'ARG SOURCE_URL=https://github.com/xxi0xx/owl-invites' Dockerfile || {
   echo 'OCI source default is not the canonical repository' >&2
   violations=$((violations + 1))
 }
+grep -Fq 'org.opencontainers.image.title=Owl Invites' .github/workflows/release.yml || {
+  echo 'release metadata does not preserve the human-readable Owl Invites OCI title' >&2
+  violations=$((violations + 1))
+}
+grep -Fq 'org.opencontainers.image.description=Self-hosted invitation and RSVP management' .github/workflows/release.yml || {
+  echo 'release metadata does not preserve the Owl Invites OCI description' >&2
+  violations=$((violations + 1))
+}
+grep -Fq 'org.opencontainers.image.source=https://github.com/${{ github.repository }}' .github/workflows/release.yml || {
+  echo 'release metadata does not use the current repository as OCI source' >&2
+  violations=$((violations + 1))
+}
 
 count_literal() {
   local token=$1

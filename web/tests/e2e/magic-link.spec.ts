@@ -169,7 +169,8 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 	await page.getByLabel('Message').fill('Please send your household response.');
 	await page.getByRole('button', { name: 'Schedule reminder' }).click();
 	await expect(page.getByText('Reminder scheduled.')).toBeVisible();
-	await expect(page.getByText('Status: scheduled')).toBeVisible();
+	const pendingReminder = page.locator('article').filter({ hasText: 'Please send your household response.' });
+	await expect(pendingReminder.getByText('Status: scheduled')).toBeVisible();
 
 	// Current-domain export includes response state and both scoped answers.
 	const exportResponse = await page.request.get(`/api/v1/events/${eventID}/invitations/export`);

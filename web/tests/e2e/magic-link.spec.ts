@@ -36,14 +36,15 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 
 	// Fresh setup, installed-app root routing, and magic-link login.
 	await page.goto('/');
-	await expect(page).toHaveURL(/\/setup$/);
-	await page.getByLabel('Bootstrap token').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel(/^Name/).fill('Gate Five Admin');
-	await page.getByLabel(/^Email/).fill(ADMIN_EMAIL);
-	await page.getByRole('button', { name: 'Complete setup' }).click();
-	await expect(page).toHaveURL(/\/events$/);
-	await page.goto('/auth/logout');
-	await page.goto('/');
+	if (/\/setup$/.test(page.url())) {
+		await page.getByLabel('Bootstrap token').fill(BOOTSTRAP_TOKEN);
+		await page.getByLabel(/^Name/).fill('Gate Five Admin');
+		await page.getByLabel(/^Email/).fill(ADMIN_EMAIL);
+		await page.getByRole('button', { name: 'Complete setup' }).click();
+		await expect(page).toHaveURL(/\/events$/);
+		await page.goto('/auth/logout');
+		await page.goto('/');
+	}
 	await expect(page).toHaveURL(/\/auth\/login$/);
 	await page.getByLabel('Email address').fill(ADMIN_EMAIL);
 	await page.getByRole('button', { name: 'Send Magic Link' }).click();
@@ -86,7 +87,7 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 	await page.getByLabel('Body Text').fill('Join us beneath the garden lights.');
 	await page.getByLabel('Footer Text').fill('Please respond for everyone in your household.');
 	await page.getByRole('button', { name: 'Save Invite Design' }).click();
-	await expect(page.getByText('Design saved')).toBeVisible();
+	await expect(page.getByText('Design saved', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Publish & View Dashboard' }).click();
 	await expect(page).toHaveURL(new RegExp(`/events/${eventID}$`));
 

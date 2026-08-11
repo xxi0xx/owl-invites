@@ -140,6 +140,16 @@ export interface InvitationHousehold {
 	questions: InvitationQuestion[];
 	invitationAnswers: Array<{ questionId: string; answer: string }>;
 	guestAnswers: Array<{ guestId: string; questionId: string; answer: string }>;
+	presentation: {
+		templateId: string;
+		heading: string;
+		body: string;
+		footer: string;
+		primaryColor: string;
+		secondaryColor: string;
+		font: string;
+		backgroundImage?: string;
+	};
 }
 
 export interface InvitationImportIssue {

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import Button from '$lib/components/ui/Button.svelte';
+	import InviteCardPreview from '$lib/components/invite/InviteCardPreview.svelte';
 	import type { ApiError, InvitationAttendance, InvitationHousehold, InvitationQuestion } from '$lib/types';
 
 	let household = $state<InvitationHousehold | null>(null);
@@ -115,10 +116,25 @@
 	{:else if !household}<div class="mx-auto max-w-lg rounded-xl bg-white p-8 text-center shadow-sm"><h1 class="text-xl font-semibold">Invitation unavailable</h1><p class="mt-3 text-sm text-neutral-600">{error}</p><a class="mt-4 inline-block text-primary underline" href="/invitation/recovery">Request recovery</a></div>
 	{:else}
 		<form onsubmit={submit} class="mx-auto max-w-3xl space-y-6">
-			<header class="rounded-xl border border-neutral-200 bg-white p-7 shadow-sm">
-				<p class="text-sm font-medium text-primary">{household.invitation.label}</p>
-				<h1 class="mt-1 text-3xl font-semibold text-neutral-900">{household.event.title}</h1>
-				<p class="mt-3 text-neutral-600">{new Date(household.event.eventDate).toLocaleString()} · {household.event.location || 'Location to be announced'}</p>
+			<header class="space-y-4">
+				<InviteCardPreview
+					templateId={household.presentation.templateId}
+					heading={household.presentation.heading}
+					body={household.presentation.body}
+					footer={household.presentation.footer}
+					primaryColor={household.presentation.primaryColor}
+					secondaryColor={household.presentation.secondaryColor}
+					font={household.presentation.font}
+					customData={JSON.stringify({ backgroundImage: household.presentation.backgroundImage })}
+					eventTitle={household.event.title}
+					eventDate={household.event.eventDate}
+					eventLocation={household.event.location || 'Location to be announced'}
+					timezone={household.event.timezone}
+				/>
+				<div class="rounded-xl border border-neutral-200 bg-white px-5 py-4 text-center shadow-sm">
+					<p class="text-sm text-neutral-600">Responding for</p>
+					<p class="font-semibold text-neutral-900">{household.invitation.label}</p>
+				</div>
 			</header>
 
 			{#if error}<div class="rounded-md bg-error-light p-4 text-sm text-error">{error}</div>{/if}

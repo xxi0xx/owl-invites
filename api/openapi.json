@@ -192,9 +192,23 @@
           "sortOrder": { "type": "integer" }
         }
       },
+      "GuestInvitationPresentation": {
+        "type": "object",
+        "required": ["templateId", "heading", "body", "footer", "primaryColor", "secondaryColor", "font"],
+        "properties": {
+          "templateId": { "type": "string" },
+          "heading": { "type": "string" },
+          "body": { "type": "string" },
+          "footer": { "type": "string" },
+          "primaryColor": { "type": "string" },
+          "secondaryColor": { "type": "string" },
+          "font": { "type": "string" },
+          "backgroundImage": { "type": "string", "description": "Revalidated public upload or HTTPS image URL. Storage paths and arbitrary invite custom data are never exposed." }
+        }
+      },
       "InvitationHousehold": {
         "type": "object",
-        "required": ["invitation", "event", "response", "guests", "questions", "invitationAnswers", "guestAnswers"],
+        "required": ["invitation", "event", "response", "guests", "questions", "invitationAnswers", "guestAnswers", "presentation"],
         "properties": {
           "invitation": { "$ref": "#/components/schemas/Invitation" },
           "event": { "type": "object", "additionalProperties": true },
@@ -202,7 +216,8 @@
           "guests": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationGuest" } },
           "questions": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationQuestion" } },
           "invitationAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-          "guestAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+          "guestAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "presentation": { "$ref": "#/components/schemas/GuestInvitationPresentation" }
         }
       },
       "CreateInvitationRequest": {

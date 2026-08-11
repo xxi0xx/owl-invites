@@ -140,6 +140,17 @@ export type InvitationQuestion = {
 	"sortOrder": number;
 };
 
+export type GuestInvitationPresentation = {
+	"templateId": string;
+	"heading": string;
+	"body": string;
+	"footer": string;
+	"primaryColor": string;
+	"secondaryColor": string;
+	"font": string;
+	"backgroundImage"?: string;
+};
+
 export type InvitationHousehold = {
 	"invitation": Invitation;
 	"event": Record<string, unknown>;
@@ -148,6 +159,7 @@ export type InvitationHousehold = {
 	"questions": Array<InvitationQuestion>;
 	"invitationAnswers": Array<Record<string, unknown>>;
 	"guestAnswers": Array<Record<string, unknown>>;
+	"presentation": GuestInvitationPresentation;
 };
 
 export type CreateInvitationRequest = {

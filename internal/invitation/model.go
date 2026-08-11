@@ -96,16 +96,31 @@ type EventSummary struct {
 	Status      string     `json:"status"`
 }
 
+// GuestPresentation is the safe, read-only subset of invite-card data exposed
+// through an already-authorized household session. Arbitrary custom data,
+// storage paths, organizer metadata, and card administration fields are absent.
+type GuestPresentation struct {
+	TemplateID      string `json:"templateId"`
+	Heading         string `json:"heading"`
+	Body            string `json:"body"`
+	Footer          string `json:"footer"`
+	PrimaryColor    string `json:"primaryColor"`
+	SecondaryColor  string `json:"secondaryColor"`
+	Font            string `json:"font"`
+	BackgroundImage string `json:"backgroundImage,omitempty"`
+}
+
 // Household is the complete invitation-scoped view returned to an organizer
 // or to a browser holding a valid invitation session.
 type Household struct {
-	Invitation        *Invitation   `json:"invitation"`
-	Event             *EventSummary `json:"event"`
-	Response          *Response     `json:"response"`
-	Guests            []*Guest      `json:"guests"`
-	Questions         []*Question   `json:"questions"`
-	InvitationAnswers []Answer      `json:"invitationAnswers"`
-	GuestAnswers      []GuestAnswer `json:"guestAnswers"`
+	Invitation        *Invitation        `json:"invitation"`
+	Event             *EventSummary      `json:"event"`
+	Response          *Response          `json:"response"`
+	Guests            []*Guest           `json:"guests"`
+	Questions         []*Question        `json:"questions"`
+	InvitationAnswers []Answer           `json:"invitationAnswers"`
+	GuestAnswers      []GuestAnswer      `json:"guestAnswers"`
+	Presentation      *GuestPresentation `json:"presentation"`
 }
 
 type CreateRequest struct {

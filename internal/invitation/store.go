@@ -385,9 +385,14 @@ func (s *Store) LoadHousehold(ctx context.Context, invitationID string) (*Househ
 	if err != nil {
 		return nil, err
 	}
+	presentation, err := s.loadGuestPresentation(ctx, inv.EventID)
+	if err != nil {
+		return nil, err
+	}
 	return &Household{
 		Invitation: inv, Event: eventSummary, Response: response, Guests: guests,
 		Questions: questions, InvitationAnswers: invAnswers, GuestAnswers: guestAnswers,
+		Presentation: presentation,
 	}, nil
 }
 

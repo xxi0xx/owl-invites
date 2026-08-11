@@ -499,6 +499,13 @@ export interface Operations {
 	"data": InvitationImportCommitResult;
 };
 	};
+	exportInvitationResponses: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: void;
+	};
 	getInvitation: {
 		parameters: {
 	"eventId": string;
@@ -642,6 +649,7 @@ export const operationDefinitions = {
 	downloadInvitationImportTemplate: {"method":"GET","path":"/events/{eventId}/invitations/import/template","pathParams":["eventId"],"queryParams":[]},
 	previewInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/preview","pathParams":["eventId"],"queryParams":[]},
 	commitInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/commit","pathParams":["eventId"],"queryParams":[]},
+	exportInvitationResponses: {"method":"GET","path":"/events/{eventId}/invitations/export","pathParams":["eventId"],"queryParams":[]},
 	getInvitation: {"method":"GET","path":"/events/{eventId}/invitations/{invitationId}","pathParams":["eventId","invitationId"],"queryParams":[]},
 	deliverInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/deliver","pathParams":["eventId","invitationId"],"queryParams":[]},
 	rotateInvitationCapability: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/rotate","pathParams":["eventId","invitationId"],"queryParams":[]},

@@ -590,6 +590,14 @@
         "responses": { "201": { "description": "All previewed households created atomically without delivery", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationImportCommitResult" } } } } } } }
       }
     },
+    "/events/{eventId}/invitations/export": {
+      "get": {
+        "operationId": "exportInvitationResponses",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "One flattened row per active guest with household, response, attendance, and scoped answer data", "content": { "text/csv": { "schema": { "type": "string" } } } } }
+      }
+    },
     "/events/{eventId}/invitations/{invitationId}": {
       "parameters": [
         { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },

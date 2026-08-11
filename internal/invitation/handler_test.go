@@ -120,11 +120,20 @@ func TestOrganizerImportPreviewCommitAndPublicIsolation(t *testing.T) {
 	items, err = f.store.ListByEvent(context.Background(), f.eventID)
 	require.NoError(t, err)
 	assert.Len(t, items, 2)
+	exportResponse := requestJSON(t, organizer, http.MethodGet,
+		"/events/"+f.eventID+"/invitations/export", nil, nil)
+	require.Equal(t, http.StatusOK, exportResponse.Code, exportResponse.Body.String())
+	assert.Equal(t, "text/csv; charset=utf-8", exportResponse.Header().Get("Content-Type"))
+	assert.Contains(t, exportResponse.Body.String(), "invitation_id")
+	assert.Contains(t, exportResponse.Body.String(), "First Household")
 
 	_, public, _ := publicHandlerFixture(t)
 	publicResponse := postCSV(t, public, "/invitations/import/preview", csvData)
 	assert.Equal(t, http.StatusNotFound, publicResponse.Code,
 		"public invitation routes must never expose organizer import")
+	publicExport := requestJSON(t, public, http.MethodGet, "/invitations/export", nil, nil)
+	assert.Equal(t, http.StatusNotFound, publicExport.Code,
+		"public invitation routes must never expose organizer export")
 }
 
 func TestCapabilityExchangeDoesNotLeakCapabilityAndSetsScopedCookie(t *testing.T) {

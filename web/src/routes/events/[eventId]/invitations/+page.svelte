@@ -142,12 +142,16 @@
 			deliveringId = '';
 		}
 	}
+
+	async function exportResponses() {
+		await api.download(`/events/${eventId}/invitations/export`, 'owl-invites-event-responses.csv');
+	}
 </script>
 
 <svelte:head><title>Invitations</title><meta name="referrer" content="no-referrer" /></svelte:head>
 
 <main class="mx-auto max-w-6xl space-y-8 px-6 py-8">
-	<header class="flex flex-wrap items-center justify-between gap-4"><div><a href="/events" class="text-sm text-primary">← Back to events</a><h1 class="mt-2 text-3xl font-semibold">Invitations</h1>{#if currentEvent}<p class="text-sm font-medium text-neutral-700">{currentEvent.title}</p>{/if}<p class="mt-1 text-sm text-neutral-600">Each invitation is an isolated household and security boundary.</p></div><div class="flex flex-wrap gap-2"><Button variant="outline" href="/events/{eventId}/edit">Edit event</Button><Button variant="outline" href="/events/{eventId}/import">Import CSV</Button><Button href="/events/{eventId}/messages">Message households</Button></div></header>
+	<header class="flex flex-wrap items-center justify-between gap-4"><div><a href="/events" class="text-sm text-primary">← Back to events</a><h1 class="mt-2 text-3xl font-semibold">Invitations</h1>{#if currentEvent}<p class="text-sm font-medium text-neutral-700">{currentEvent.title}</p>{/if}<p class="mt-1 text-sm text-neutral-600">Each invitation is an isolated household and security boundary.</p></div><div class="flex flex-wrap gap-2"><Button variant="outline" href="/events/{eventId}/edit">Edit event</Button><Button variant="outline" href="/events/{eventId}/import">Import CSV</Button><Button type="button" variant="outline" onclick={exportResponses}>Export CSV</Button><Button href="/events/{eventId}/messages">Message households</Button></div></header>
 	{#if error}<div class="rounded-md bg-error-light p-4 text-sm text-error">{error}</div>{/if}
 	{#if deliveryWarning}<div class="rounded-md border border-warning/30 bg-warning-light p-4 text-sm text-warning">{deliveryWarning}</div>{/if}
 	{#if lastAccessURL}<div class="rounded-md border border-warning/30 bg-warning-light p-4"><p class="text-sm font-medium">Copy this private link now. Treat it as a credential.</p><code class="mt-2 block break-all text-xs">{lastAccessURL}</code></div>{/if}

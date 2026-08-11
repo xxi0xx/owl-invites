@@ -50,6 +50,7 @@ func (h *Handler) OrganizerInvitationRoutes() chi.Router {
 	r.Get("/import/template", h.importTemplate)
 	r.Post("/import/preview", h.previewImport)
 	r.Post("/import/commit", h.commitImport)
+	r.Get("/export", h.exportCSV)
 	r.Get("/{invitationId}", h.get)
 	r.Post("/{invitationId}/deliver", h.deliver)
 	r.Post("/{invitationId}/rotate", h.rotate)
@@ -111,6 +112,23 @@ func (h *Handler) commitImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
+	eventID, _, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	data, err := h.service.ExportEventCSV(r.Context(), eventID)
+	if err != nil {
+		h.internal(w, err, "export invitation responses")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="owl-invites-event-responses.csv"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // OrganizerOpenEnrollmentRoutes is mounted below

@@ -3,8 +3,8 @@
 Gate 4 starts from main commit
 `10f76f0411222cdff246cd57ab303288b09ede86`. The initial case-sensitive
 repository scan found 80 `OpenRSVP` and 312 `openrsvp` occurrences. The old Go
-module accounted for 222 of the lowercase matches. No `Invia` occurrence was
-present.
+module accounted for 222 of the lowercase matches. No prior working-name
+occurrence was present.
 
 This inventory classifies the residue before rebranding. Bare `RSVP` is not a
 brand residue: it remains conventional domain terminology.
@@ -19,6 +19,6 @@ brand residue: it remains conventional domain terminology.
 | Dead legacy code/assets | `cmd/openrsvp`, shipped `openrsvp` executable, Svelte starter favicon, Satoshi font files | Remove. The canonical server and operator interface become one `owl-invites` executable; replace assets with documented Owl-owned/OFL assets. |
 | Domain word | `RSVP`, `RSVPResponse`, RSVP status, RSVP questions | Keep. These terms describe the invitation domain and are not mascot or upstream-product terminology. |
 
-The final `scripts/lint-branding.sh` allowlist must cover only the documented
+The final `scripts/lint-brand-residue.sh` allowlist must cover only the documented
 compatibility, protocol, and provenance cases above. Any remaining inherited
 identifier outside that set is a Gate 4 defect.

@@ -16,16 +16,17 @@ import (
 	"github.com/xxi0xx/owl-invites/internal/config"
 	"github.com/xxi0xx/owl-invites/internal/database"
 	"github.com/xxi0xx/owl-invites/internal/invitation"
+	invitecard "github.com/xxi0xx/owl-invites/internal/invite"
 	"github.com/xxi0xx/owl-invites/internal/question"
 	"github.com/xxi0xx/owl-invites/internal/testutil"
 )
 
 const restoreSecret = "4c64fb646f28c3cf57d320675a546e290173f4ab91786764"
 
-// TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState is the executable
-// compatibility drill: restore verified Gate 3 state at the inherited default
-// path, let Gate 4 discover it, and prove persisted capabilities still work.
-func TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState(t *testing.T) {
+// TestGate3ToGate5SQLiteUpgradePreservesCapabilityAndState is the executable
+// compatibility drill: back up representative current product state, restore
+// it at the inherited default path, and prove persisted capabilities still work.
+func TestGate3ToGate5SQLiteUpgradePreservesCapabilityAndState(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	sourceDatabase := filepath.Join(root, "source.db")
@@ -40,22 +41,62 @@ func TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState(t *testing.T) {
 		Label: "Meal preference", Type: "text", Required: &required, Scope: "invitation",
 	})
 	require.NoError(t, err)
+	guestQuestion, err := question.NewService(question.NewStore(db)).Create(ctx, eventID, question.CreateQuestionRequest{
+		Label: "Guest note", Type: "text", Scope: "guest",
+	})
+	require.NoError(t, err)
+	card, err := invitecard.NewService(invitecard.NewStore(db), sourceUploads).Save(ctx, eventID, invitecard.SaveInviteRequest{
+		TemplateID: "garden-picnic", Heading: "Recovery Garden Party", Body: "The invitation presentation survived.",
+		Footer: "See you there", PrimaryColor: "#225522", SecondaryColor: "#eef8ee", Font: "Inter",
+		CustomData: `{"backgroundImage":"/api/v1/uploads/hero.png"}`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Recovery Garden Party", card.Heading)
 
 	service, err := invitation.NewService(invitation.NewStore(db), restoreSecret, "https://invites.example", 24*time.Hour, 15*time.Minute)
 	require.NoError(t, err)
 	email := "household@example.com"
 	created, err := service.CreatePrivate(ctx, eventID, ownerID, invitation.CreateRequest{
-		Label: "Restore household", ContactEmail: &email, PreferredDeliveryMethod: "email", AssignedGuestNames: []string{"Alex"},
+		Label: "Restore household", ContactEmail: &email, PreferredDeliveryMethod: "email",
+		AdditionalGuestAllowance: 1, AssignedGuestNames: []string{"Alex"},
 	})
 	require.NoError(t, err)
+	imported, err := service.CommitImport(ctx, eventID, ownerID, invitation.ImportCommitRequest{Households: []invitation.ImportHousehold{{
+		HouseholdKey: "separate-same-contact", HouseholdLabel: "Imported household", ContactEmail: &email,
+		PreferredDelivery: "email", AssignedGuestNames: []string{"Zoë Imported"},
+	}}})
+	require.NoError(t, err)
+	require.Len(t, imported.InvitationIDs, 1)
 	capability := strings.SplitN(created.AccessURL, "#", 2)[1]
 	session, household, err := service.ExchangePrivate(ctx, capability)
 	require.NoError(t, err)
-	_, err = service.SubmitForSession(ctx, session, invitation.SubmitRequest{
+	updated, err := service.SubmitForSession(ctx, session, invitation.SubmitRequest{
 		Version:           household.Response.Version,
 		AssignedGuests:    []invitation.GuestAttendanceInput{{GuestID: household.Guests[0].ID, Attendance: invitation.AttendanceAttending}},
+		AdditionalGuests:  []invitation.AdditionalGuestInput{{Name: "Taylor Plus One", Attendance: invitation.AttendanceMaybe}},
 		InvitationAnswers: map[string]string{questionRecord.ID: "Vegetarian"},
+		GuestAnswers:      map[string]map[string]string{household.Guests[0].ID: {guestQuestion.ID: "Assigned answer"}},
 	})
+	require.NoError(t, err)
+	require.Len(t, updated.Guests, 2)
+	additionalGuestID := updated.Guests[1].ID
+	updated, err = service.SubmitForSession(ctx, session, invitation.SubmitRequest{
+		Version:           updated.Response.Version,
+		AssignedGuests:    []invitation.GuestAttendanceInput{{GuestID: household.Guests[0].ID, Attendance: invitation.AttendanceAttending}},
+		AdditionalGuests:  []invitation.AdditionalGuestInput{{ID: additionalGuestID, Name: "Taylor Plus One", Attendance: invitation.AttendanceMaybe}},
+		InvitationAnswers: map[string]string{questionRecord.ID: "Vegetarian"},
+		GuestAnswers: map[string]map[string]string{
+			household.Guests[0].ID: {guestQuestion.ID: "Assigned answer"},
+			additionalGuestID:      {guestQuestion.ID: "Additional answer"},
+		},
+	})
+	require.NoError(t, err)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = db.ExecContext(ctx, `INSERT INTO notification_log (
+		id, event_id, invitation_id, channel, provider, status, delivery_status,
+		error, recipient, subject, sent_at, created_at
+	) VALUES ('gate5-backup-delivery', ?, ?, 'email', 'smtp', 'sent', 'sent', '', ?,
+		'Restore delivery', ?, ?)`, eventID, created.Invitation.ID, email, now, now)
 	require.NoError(t, err)
 
 	bundle := filepath.Join(root, "backup-bundle")
@@ -103,9 +144,36 @@ func TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState(t *testing.T) {
 	require.NoError(t, err)
 	_, restoredHousehold, err := restoredService.ExchangePrivate(ctx, capability)
 	require.NoError(t, err)
+	require.Len(t, restoredHousehold.Guests, 2)
 	assert.Equal(t, invitation.AttendanceAttending, restoredHousehold.Guests[0].Attendance)
+	assert.Equal(t, invitation.GuestOriginAdditional, restoredHousehold.Guests[1].Origin)
+	assert.Equal(t, invitation.AttendanceMaybe, restoredHousehold.Guests[1].Attendance)
 	require.Len(t, restoredHousehold.InvitationAnswers, 1)
 	assert.Equal(t, "Vegetarian", restoredHousehold.InvitationAnswers[0].Answer)
+	assert.Contains(t, restoredHousehold.GuestAnswers, invitation.GuestAnswer{
+		GuestID: additionalGuestID, QuestionID: guestQuestion.ID, Answer: "Additional answer",
+	})
+	require.NotNil(t, restoredHousehold.Presentation)
+	assert.Equal(t, "Recovery Garden Party", restoredHousehold.Presentation.Heading)
+	assert.Equal(t, "/api/v1/uploads/hero.png", restoredHousehold.Presentation.BackgroundImage)
+
+	restoredOrganizerHouseholds, err := restoredService.ListOrganizerHouseholds(ctx, eventID, invitation.InvitationListFilter{})
+	require.NoError(t, err)
+	require.Len(t, restoredOrganizerHouseholds, 2, "equal contact destinations must remain separate households")
+	var restoredPrimary *invitation.Household
+	for _, item := range restoredOrganizerHouseholds {
+		if item.Invitation.ID == created.Invitation.ID {
+			restoredPrimary = item
+		}
+	}
+	require.NotNil(t, restoredPrimary)
+	require.NotNil(t, restoredPrimary.LatestDelivery)
+	assert.Equal(t, "sent", restoredPrimary.LatestDelivery.Status)
+	exported, err := restoredService.ExportEventCSV(ctx, eventID)
+	require.NoError(t, err)
+	assert.Contains(t, string(exported), created.Invitation.ID)
+	assert.Contains(t, string(exported), imported.InvitationIDs[0])
+	assert.Contains(t, string(exported), "Additional answer")
 
 	wrongService, err := invitation.NewService(invitation.NewStore(restoredDB), wrongSecret, "https://invites.example", 24*time.Hour, 15*time.Minute)
 	require.NoError(t, err)

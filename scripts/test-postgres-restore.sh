@@ -99,6 +99,7 @@ if [[ "$($CLI_BINARY secret fingerprint)" != "$(jq -r .secretFingerprint "$metad
   echo "restored database has the wrong secret fingerprint" >&2
   exit 1
 fi
+go run ./internal/backup/testfixture --state "$state" --verify
 
 $SERVER_BINARY >"$server_log" 2>&1 &
 server_pid=$!
@@ -111,11 +112,20 @@ curl --fail --silent --show-error \
 jq -e \
   --arg invitation "$(jq -r .invitationId "$state")" \
   --arg guest "$(jq -r .guestId "$state")" \
-  --arg question "$(jq -r .questionId "$state")" \
-  --arg answer "$(jq -r .answer "$state")" \
+  --arg additionalGuest "$(jq -r .additionalGuestId "$state")" \
+  --arg invitationQuestion "$(jq -r .invitationQuestionId "$state")" \
+  --arg guestQuestion "$(jq -r .guestQuestionId "$state")" \
+  --arg invitationAnswer "$(jq -r .invitationAnswer "$state")" \
+  --arg additionalGuestAnswer "$(jq -r .additionalGuestAnswer "$state")" \
+  --arg cardHeading "$(jq -r .cardHeading "$state")" \
+  --arg upload "$(jq -r .upload "$state")" \
   '.data.invitation.id == $invitation and
    any(.data.guests[]; .id == $guest and .attendance == "attending") and
-   any(.data.invitationAnswers[]; .questionId == $question and .answer == $answer)' \
+   any(.data.guests[]; .id == $additionalGuest and .origin == "additional" and .attendance == "maybe") and
+   any(.data.invitationAnswers[]; .questionId == $invitationQuestion and .answer == $invitationAnswer) and
+   any(.data.guestAnswers[]; .guestId == $additionalGuest and .questionId == $guestQuestion and .answer == $additionalGuestAnswer) and
+   .data.presentation.heading == $cardHeading and
+   .data.presentation.backgroundImage == ("/api/v1/uploads/" + $upload)' \
   "$work/exchange-response.json" >/dev/null
 curl --fail --silent --show-error \
   "http://127.0.0.1:18080/api/v1/uploads/$(jq -r .upload "$state")" \

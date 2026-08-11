@@ -47,12 +47,90 @@ func (h *Handler) OrganizerInvitationRoutes() chi.Router {
 	r.Use(h.authMiddleware)
 	r.Get("/", h.list)
 	r.Post("/", h.create)
+	r.Get("/import/template", h.importTemplate)
+	r.Post("/import/preview", h.previewImport)
+	r.Post("/import/commit", h.commitImport)
+	r.Get("/export", h.exportCSV)
 	r.Get("/{invitationId}", h.get)
+	r.Put("/{invitationId}", h.update)
 	r.Post("/{invitationId}/deliver", h.deliver)
 	r.Post("/{invitationId}/rotate", h.rotate)
 	r.Post("/{invitationId}/revoke", h.revoke)
+	r.Post("/messages/preview", h.previewMessage)
 	r.Post("/messages", h.message)
 	return r
+}
+
+func (h *Handler) importTemplate(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := h.eventActor(r); !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="owl-invites-household-import-template.csv"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(importTemplateCSV))
+}
+
+func (h *Handler) previewImport(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := h.eventActor(r); !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	// Multipart framing adds modest overhead beyond the file itself. The parser
+	// still independently enforces MaxImportBytes on the actual CSV payload.
+	r.Body = http.MaxBytesReader(w, r.Body, MaxImportBytes+(64<<10))
+	if err := r.ParseMultipartForm(MaxImportBytes); err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "import_too_large", "CSV upload exceeds the import size limit")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "CSV file is required")
+		return
+	}
+	defer func() { _ = file.Close() }()
+	preview, err := PreviewImportCSV(file)
+	if err != nil {
+		h.internal(w, err, "preview invitation import")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
+}
+
+func (h *Handler) commitImport(w http.ResponseWriter, r *http.Request) {
+	eventID, userID, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req ImportCommitRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	result, err := h.service.CommitImport(r.Context(), eventID, userID, req)
+	if h.writeServiceError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+func (h *Handler) exportCSV(w http.ResponseWriter, r *http.Request) {
+	eventID, _, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	data, err := h.service.ExportEventCSV(r.Context(), eventID)
+	if err != nil {
+		h.internal(w, err, "export invitation responses")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="owl-invites-event-responses.csv"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // OrganizerOpenEnrollmentRoutes is mounted below
@@ -77,11 +155,29 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
-	sent, err := h.service.Broadcast(r.Context(), eventID, &userID, req)
+	result, err := h.service.BroadcastDetailed(r.Context(), eventID, &userID, req)
 	if h.writeServiceError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]int{"sent": sent}})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+func (h *Handler) previewMessage(w http.ResponseWriter, r *http.Request) {
+	eventID, _, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req MessagePreviewRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	preview, err := h.service.PreviewBroadcast(r.Context(), eventID, req)
+	if h.writeServiceError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 }
 
 // PublicRoutes is mounted below /api/v1/invitations. Mutation routes that
@@ -117,9 +213,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
-	items, err := h.service.store.ListByEvent(r.Context(), eventID)
-	if err != nil {
-		h.internal(w, err, "list invitations")
+	items, err := h.service.ListOrganizerHouseholds(r.Context(), eventID, InvitationListFilter{
+		Search: r.URL.Query().Get("search"), Response: r.URL.Query().Get("response"),
+		Attendance: r.URL.Query().Get("attendance"),
+	})
+	if h.writeServiceError(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
@@ -159,9 +257,28 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "invitation not found")
 		return
 	}
-	household, err := h.service.store.LoadHousehold(r.Context(), inv.ID)
+	household, err := h.service.store.LoadOrganizerHousehold(r.Context(), inv.ID)
 	if err != nil {
 		h.internal(w, err, "load invitation")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": household})
+}
+
+func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+	eventID, _, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req UpdateInvitationRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	household, err := h.service.UpdateInvitation(r.Context(), eventID,
+		chi.URLParam(r, "invitationId"), req)
+	if h.writeServiceError(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": household})
@@ -431,6 +548,8 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusConflict, "allowance_exceeded", "additional guest allowance exceeded")
 	case errors.Is(err, ErrCapacity):
 		writeError(w, http.StatusConflict, "capacity_reached", "open invitation capacity reached")
+	case errors.Is(err, ErrDeliverySuppressed):
+		writeError(w, http.StatusConflict, "delivery_suppressed", "the stored email destination is suppressed; update the destination or suppression settings before retrying")
 	case errors.Is(err, ErrInvalidCapability):
 		writeError(w, http.StatusUnauthorized, "invalid_capability", "invalid or expired invitation")
 	case errors.Is(err, ErrNotFound):

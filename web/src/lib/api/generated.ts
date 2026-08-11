@@ -140,6 +140,26 @@ export type InvitationQuestion = {
 	"sortOrder": number;
 };
 
+export type GuestInvitationPresentation = {
+	"templateId": string;
+	"heading": string;
+	"body": string;
+	"footer": string;
+	"primaryColor": string;
+	"secondaryColor": string;
+	"font": string;
+	"backgroundImage"?: string;
+};
+
+export type InvitationDeliverySummary = {
+	"status": "pending" | "sent" | "failed";
+	"deliveryStatus": "unknown" | "delivered" | "opened" | "clicked" | "bounced" | "complained";
+	"provider": string;
+	"error"?: string;
+	"attemptedAt": string;
+	"sentAt"?: string;
+};
+
 export type InvitationHousehold = {
 	"invitation": Invitation;
 	"event": Record<string, unknown>;
@@ -148,6 +168,8 @@ export type InvitationHousehold = {
 	"questions": Array<InvitationQuestion>;
 	"invitationAnswers": Array<Record<string, unknown>>;
 	"guestAnswers": Array<Record<string, unknown>>;
+	"presentation": GuestInvitationPresentation;
+	"latestDelivery"?: InvitationDeliverySummary;
 };
 
 export type CreateInvitationRequest = {
@@ -158,6 +180,18 @@ export type CreateInvitationRequest = {
 	"additionalGuestAllowance": number;
 	"assignedGuestNames": Array<string>;
 	"send"?: boolean;
+};
+
+export type UpdateInvitationRequest = {
+	"label": string;
+	"contactEmail"?: string;
+	"contactPhone"?: string;
+	"preferredDeliveryMethod": "email" | "sms" | "none";
+	"additionalGuestAllowance": number;
+	"assignedGuests": Array<{
+		"id"?: string;
+		"name": string;
+	}>;
 };
 
 export type InvitationDeliveryResult = {
@@ -178,10 +212,22 @@ export type InvitationCapabilityRequest = {
 
 export type InvitationSubmitRequest = {
 	"version": number;
-	"assignedGuests": Array<Record<string, unknown>>;
-	"additionalGuests": Array<Record<string, unknown>>;
+	"assignedGuests": Array<AssignedGuestAttendanceInput>;
+	"additionalGuests": Array<AdditionalGuestResponseInput>;
 	"invitationAnswers": Record<string, unknown>;
 	"guestAnswers": Record<string, unknown>;
+};
+
+export type AssignedGuestAttendanceInput = {
+	"guestId": string;
+	"attendance": "pending" | "attending" | "maybe" | "declined";
+};
+
+export type AdditionalGuestResponseInput = {
+	"id"?: string;
+	"clientKey"?: string;
+	"name": string;
+	"attendance": "pending" | "attending" | "maybe" | "declined";
 };
 
 export type RecoveryRequest = {
@@ -223,7 +269,76 @@ export type InvitationMessageRequest = {
 };
 
 export type InvitationMessageResult = {
-	"sent": number;
+	"attempted": number;
+	"accepted": number;
+	"failed": number;
+	"skipped": number;
+};
+
+export type InvitationMessagePreviewRequest = {
+	"recipientGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+};
+
+export type InvitationMessagePreview = {
+	"recipientGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"recipientHouseholds": number;
+};
+
+export type InvitationImportIssue = {
+	"row"?: number;
+	"field"?: string;
+	"message": string;
+};
+
+export type InvitationImportHousehold = {
+	"householdKey": string;
+	"householdLabel": string;
+	"contactEmail"?: string;
+	"contactPhone"?: string;
+	"preferredDelivery": "email" | "sms" | "none";
+	"additionalGuestAllowance": number;
+	"assignedGuestNames": Array<string>;
+};
+
+export type InvitationImportPreview = {
+	"householdCount": number;
+	"assignedGuestCount": number;
+	"households": Array<InvitationImportHousehold>;
+	"errors": Array<InvitationImportIssue>;
+	"warnings": Array<InvitationImportIssue>;
+};
+
+export type InvitationImportCommitRequest = {
+	"households": Array<InvitationImportHousehold>;
+};
+
+export type InvitationImportCommitResult = {
+	"householdCount": number;
+	"assignedGuestCount": number;
+	"invitationIds": Array<string>;
+};
+
+export type Reminder = {
+	"id": string;
+	"eventId": string;
+	"remindAt": string;
+	"targetGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"message": string;
+	"status": "scheduled" | "processing" | "sent" | "cancelled" | "failed";
+	"createdAt": string;
+	"updatedAt": string;
+};
+
+export type CreateReminderRequest = {
+	"remindAt": string;
+	"targetGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"message": string;
+};
+
+export type UpdateReminderRequest = {
+	"remindAt"?: string;
+	"targetGroup"?: "all" | "attending" | "maybe" | "declined" | "pending";
+	"message"?: string;
 };
 
 export type OpenEnrollmentRequest = {
@@ -425,6 +540,9 @@ export interface Operations {
 	listInvitations: {
 		parameters: {
 	"eventId": string;
+	"search"?: string;
+	"response"?: "submitted" | "not_submitted";
+	"attendance"?: "pending" | "attending" | "maybe" | "declined";
 };
 		requestBody: void;
 		response: {
@@ -440,12 +558,54 @@ export interface Operations {
 	"data": CreateInvitationResult;
 };
 	};
+	downloadInvitationImportTemplate: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: void;
+	};
+	previewInvitationImport: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: {
+	"data": InvitationImportPreview;
+};
+	};
+	commitInvitationImport: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: InvitationImportCommitRequest;
+		response: {
+	"data": InvitationImportCommitResult;
+};
+	};
+	exportInvitationResponses: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: void;
+	};
 	getInvitation: {
 		parameters: {
 	"eventId": string;
 	"invitationId": string;
 };
 		requestBody: void;
+		response: {
+	"data": InvitationHousehold;
+};
+	};
+	updateInvitationHousehold: {
+		parameters: {
+	"eventId": string;
+	"invitationId": string;
+};
+		requestBody: UpdateInvitationRequest;
 		response: {
 	"data": InvitationHousehold;
 };
@@ -486,6 +646,49 @@ export interface Operations {
 		response: {
 	"data": InvitationMessageResult;
 };
+	};
+	previewInvitationHouseholdMessage: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: InvitationMessagePreviewRequest;
+		response: {
+	"data": InvitationMessagePreview;
+};
+	};
+	listEventReminders: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: {
+	"data": Array<Reminder>;
+};
+	};
+	createEventReminder: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: CreateReminderRequest;
+		response: {
+	"data": Reminder;
+};
+	};
+	updateEventReminder: {
+		parameters: {
+	"reminderId": string;
+};
+		requestBody: UpdateReminderRequest;
+		response: {
+	"data": Reminder;
+};
+	};
+	cancelEventReminder: {
+		parameters: {
+	"reminderId": string;
+};
+		requestBody: void;
+		response: Record<string, unknown>;
 	};
 	getOpenEnrollment: {
 		parameters: {
@@ -578,13 +781,23 @@ export const operationDefinitions = {
 	listEvents: {"method":"GET","path":"/events","pathParams":[],"queryParams":[]},
 	listEventCohosts: {"method":"GET","path":"/events/{eventId}/cohosts","pathParams":["eventId"],"queryParams":[]},
 	inviteEventCohost: {"method":"POST","path":"/events/{eventId}/cohosts","pathParams":["eventId"],"queryParams":[]},
-	listInvitations: {"method":"GET","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
+	listInvitations: {"method":"GET","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":["search","response","attendance"]},
 	createInvitation: {"method":"POST","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
+	downloadInvitationImportTemplate: {"method":"GET","path":"/events/{eventId}/invitations/import/template","pathParams":["eventId"],"queryParams":[]},
+	previewInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/preview","pathParams":["eventId"],"queryParams":[]},
+	commitInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/commit","pathParams":["eventId"],"queryParams":[]},
+	exportInvitationResponses: {"method":"GET","path":"/events/{eventId}/invitations/export","pathParams":["eventId"],"queryParams":[]},
 	getInvitation: {"method":"GET","path":"/events/{eventId}/invitations/{invitationId}","pathParams":["eventId","invitationId"],"queryParams":[]},
+	updateInvitationHousehold: {"method":"PUT","path":"/events/{eventId}/invitations/{invitationId}","pathParams":["eventId","invitationId"],"queryParams":[]},
 	deliverInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/deliver","pathParams":["eventId","invitationId"],"queryParams":[]},
 	rotateInvitationCapability: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/rotate","pathParams":["eventId","invitationId"],"queryParams":[]},
 	revokeInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/revoke","pathParams":["eventId","invitationId"],"queryParams":[]},
 	messageInvitationHouseholds: {"method":"POST","path":"/events/{eventId}/invitations/messages","pathParams":["eventId"],"queryParams":[]},
+	previewInvitationHouseholdMessage: {"method":"POST","path":"/events/{eventId}/invitations/messages/preview","pathParams":["eventId"],"queryParams":[]},
+	listEventReminders: {"method":"GET","path":"/reminders/event/{eventId}","pathParams":["eventId"],"queryParams":[]},
+	createEventReminder: {"method":"POST","path":"/reminders/event/{eventId}","pathParams":["eventId"],"queryParams":[]},
+	updateEventReminder: {"method":"PUT","path":"/reminders/{reminderId}","pathParams":["reminderId"],"queryParams":[]},
+	cancelEventReminder: {"method":"DELETE","path":"/reminders/{reminderId}","pathParams":["reminderId"],"queryParams":[]},
 	getOpenEnrollment: {"method":"GET","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
 	configureOpenEnrollment: {"method":"PUT","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
 	rotateOpenEnrollmentCapability: {"method":"POST","path":"/events/{eventId}/open-enrollment/rotate","pathParams":["eventId"],"queryParams":[]},

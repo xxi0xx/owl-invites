@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("invitation not found")
-	ErrConflict  = errors.New("response version conflict")
-	ErrAllowance = errors.New("additional guest allowance exceeded")
-	ErrCapacity  = errors.New("open enrollment capacity exceeded")
+	ErrNotFound           = errors.New("invitation not found")
+	ErrConflict           = errors.New("response version conflict")
+	ErrAllowance          = errors.New("additional guest allowance exceeded")
+	ErrCapacity           = errors.New("open enrollment capacity exceeded")
+	ErrDeliverySuppressed = errors.New("invitation delivery suppressed")
 )
 
 type Store struct {
@@ -26,6 +27,13 @@ type Store struct {
 }
 
 func NewStore(db database.DB) *Store { return &Store{db: db} }
+
+// ImportRecord is one prevalidated household to insert as part of an atomic
+// import. It intentionally contains no import grouping key.
+type ImportRecord struct {
+	Invitation *Invitation
+	Guests     []*Guest
+}
 
 const invitationColumns = `id, event_id, label, contact_email, contact_phone,
 	preferred_delivery_method, additional_guest_allowance, source,
@@ -100,6 +108,69 @@ func (s *Store) Create(ctx context.Context, invitation *Invitation, guests []*Gu
 	return nil
 }
 
+// Import creates every household, response, assigned guest, and guest response
+// in one transaction. A failure anywhere rolls the complete import back.
+func (s *Store) Import(ctx context.Context, records []ImportRecord) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin invitation import: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, record := range records {
+		invitation := record.Invitation
+		var email, normalizedEmail, phone, normalizedPhone any
+		if invitation.ContactEmail != nil {
+			email = *invitation.ContactEmail
+			normalizedEmail = normalizeEmail(*invitation.ContactEmail)
+		}
+		if invitation.ContactPhone != nil {
+			phone = *invitation.ContactPhone
+			normalizedPhone = normalizePhone(*invitation.ContactPhone)
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO invitations (
+			id, event_id, label, contact_email, normalized_contact_email,
+			contact_phone, normalized_contact_phone, preferred_delivery_method,
+			additional_guest_allowance, source, open_enrollment_id, access_id,
+			token_version, created_by_user_id, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			invitation.ID, invitation.EventID, invitation.Label, email, normalizedEmail,
+			phone, normalizedPhone, invitation.PreferredDeliveryMethod,
+			invitation.AdditionalGuestAllowance, invitation.Source,
+			invitation.OpenEnrollmentID, invitation.AccessID, invitation.TokenVersion,
+			invitation.CreatedByUserID, now, now)
+		if err != nil {
+			return fmt.Errorf("import invitation: %w", err)
+		}
+
+		responseID := uuid.Must(uuid.NewV7()).String()
+		if _, err = tx.ExecContext(ctx, `INSERT INTO rsvp_responses (
+			id, invitation_id, version, created_at, updated_at
+		) VALUES (?, ?, 1, ?, ?)`, responseID, invitation.ID, now, now); err != nil {
+			return fmt.Errorf("import response: %w", err)
+		}
+		for _, guest := range record.Guests {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO guests (
+				id, invitation_id, name, origin, sort_order, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)`, guest.ID, invitation.ID, guest.Name,
+				guest.Origin, guest.SortOrder, now, now); err != nil {
+				return fmt.Errorf("import guest: %w", err)
+			}
+			if _, err = tx.ExecContext(ctx, `INSERT INTO guest_responses (
+				id, rsvp_response_id, guest_id, attendance, created_at, updated_at
+			) VALUES (?, ?, ?, 'pending', ?, ?)`, uuid.Must(uuid.NewV7()).String(),
+				responseID, guest.ID, now, now); err != nil {
+				return fmt.Errorf("import guest response: %w", err)
+			}
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit invitation import: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) FindByID(ctx context.Context, id string) (*Invitation, error) {
 	return scanInvitation(s.db.QueryRowContext(ctx,
 		`SELECT `+invitationColumns+` FROM invitations WHERE id = ?`, id))
@@ -142,7 +213,7 @@ func (s *Store) ListByEvent(ctx context.Context, eventID string) ([]*Household, 
 	// configurations may intentionally use a single connection.
 	result := make([]*Household, 0, len(invitations))
 	for _, inv := range invitations {
-		household, loadErr := s.LoadHousehold(ctx, inv.ID)
+		household, loadErr := s.LoadOrganizerHousehold(ctx, inv.ID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -153,7 +224,8 @@ func (s *Store) ListByEvent(ctx context.Context, eventID string) ([]*Household, 
 
 func (s *Store) ListDeliveryTargets(ctx context.Context, eventID, recipientGroup string) ([]*Invitation, error) {
 	query := `SELECT ` + invitationColumns + ` FROM invitations i
-		WHERE i.event_id = ? AND i.revoked_at IS NULL AND i.contact_email IS NOT NULL`
+		WHERE i.event_id = ? AND i.revoked_at IS NULL AND i.contact_email IS NOT NULL
+		AND i.preferred_delivery_method = 'email'`
 	args := []any{eventID}
 	if recipientGroup != "all" {
 		query += ` AND EXISTS (SELECT 1 FROM guests g
@@ -315,9 +387,14 @@ func (s *Store) LoadHousehold(ctx context.Context, invitationID string) (*Househ
 	if err != nil {
 		return nil, err
 	}
+	presentation, err := s.loadGuestPresentation(ctx, inv.EventID)
+	if err != nil {
+		return nil, err
+	}
 	return &Household{
 		Invitation: inv, Event: eventSummary, Response: response, Guests: guests,
 		Questions: questions, InvitationAnswers: invAnswers, GuestAnswers: guestAnswers,
+		Presentation: presentation,
 	}, nil
 }
 

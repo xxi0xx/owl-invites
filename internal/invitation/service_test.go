@@ -207,6 +207,41 @@ func TestAllowanceRequiredQuestionsAndOptimisticVersion(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAllowance)
 }
 
+func TestNewAdditionalGuestAnswersRequiredQuestionInAtomicSubmission(t *testing.T) {
+	f := newServiceFixture(t)
+	created := f.create("Household", "household@example.com", 1, "Assigned Guest")
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := f.store.db.ExecContext(context.Background(), `INSERT INTO event_questions (
+		id, event_id, label, type, options, required, sort_order, deleted, created_at, updated_at, scope
+	) VALUES ('required-new-guest-answer', ?, 'Meal choices', 'checkbox', '["Vegetarian","No nuts"]', 1, 0, 0, ?, ?, 'guest')`,
+		f.eventID, now, now)
+	require.NoError(t, err)
+
+	session, household, err := f.service.ExchangePrivate(context.Background(), capabilityFromURL(created.AccessURL))
+	require.NoError(t, err)
+	updated, err := f.service.SubmitForSession(context.Background(), session, SubmitRequest{
+		Version:        household.Response.Version,
+		AssignedGuests: []GuestAttendanceInput{{GuestID: created.Guests[0].ID, Attendance: AttendanceDeclined}},
+		AdditionalGuests: []AdditionalGuestInput{{
+			ClientKey: "new-browser-guest", Name: "New Plus One", Attendance: AttendanceAttending,
+		}},
+		GuestAnswers: map[string]map[string]string{
+			"new-browser-guest": {"required-new-guest-answer": `["Vegetarian"]`},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, updated.Guests, 2)
+	additional := updated.Guests[1]
+	assert.Equal(t, GuestOriginAdditional, additional.Origin)
+	assert.Equal(t, AttendanceAttending, additional.Attendance)
+	assert.Contains(t, updated.GuestAnswers, GuestAnswer{
+		GuestID: additional.ID, QuestionID: "required-new-guest-answer", Answer: `["Vegetarian"]`,
+	})
+	for _, answer := range updated.GuestAnswers {
+		assert.NotEqual(t, "new-browser-guest", answer.GuestID, "the client correlation key must never be persisted")
+	}
+}
+
 func TestRotationAndRevocationInvalidateCapabilitiesAndSessions(t *testing.T) {
 	f := newServiceFixture(t)
 	created := f.create("Rotate me", "rotate@example.com", 0, "Guest")

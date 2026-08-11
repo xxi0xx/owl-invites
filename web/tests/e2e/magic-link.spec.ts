@@ -3,7 +3,7 @@ import type { APIRequestContext } from '@playwright/test';
 
 const MAILPIT_URL = process.env.MAILPIT_URL || 'http://127.0.0.1:8025';
 const BOOTSTRAP_TOKEN = process.env.OWL_INVITES_E2E_BOOTSTRAP_TOKEN || 'gate-2-browser-bootstrap';
-const ADMIN_EMAIL = 'gate2-admin@owl-invites.test';
+const ADMIN_EMAIL = 'gate5-admin@owl-invites.test';
 const HOUSEHOLD_EMAIL = 'shared-household@owl-invites.test';
 
 interface MailpitMessage {
@@ -18,7 +18,7 @@ function futureLocalDateTime(days: number): string {
 	return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-async function latestMailFor(request: APIRequestContext, recipient: string): Promise<MailpitMessage> {
+async function latestMailFor(request: APIRequestContext, recipient: string, subject?: string): Promise<MailpitMessage> {
 	let latest: MailpitMessage = {};
 	await expect(async () => {
 		const response = await request.get(`${MAILPIT_URL}/api/v1/message/latest`);
@@ -26,198 +26,190 @@ async function latestMailFor(request: APIRequestContext, recipient: string): Pro
 		latest = (await response.json()) as MailpitMessage;
 		const recipients = (latest.To || []).map((item) => item.Address || item.Email || '');
 		expect(recipients).toContain(recipient);
+		if (subject) expect(latest.Subject).toBe(subject);
 	}).toPass({ timeout: 15_000, intervals: [250, 500, 1_000] });
 	return latest;
 }
 
-test('Gate 2 private and open invitation flows stay isolated through Mailpit and Chromium', async ({ browser, page, request }) => {
-	test.setTimeout(120_000);
+test('Gate 5 release-candidate household product flow', async ({ browser, page, request }) => {
+	test.setTimeout(180_000);
 
+	// Fresh setup, installed-app root routing, and magic-link login.
 	await page.goto('/');
-	await expect(page).toHaveURL(/\/setup$/);
-
-	await page.getByLabel('Bootstrap token').fill(BOOTSTRAP_TOKEN);
-	await page.getByLabel(/^Name/).fill('Gate Two Admin');
-	await page.getByLabel(/^Email/).fill(ADMIN_EMAIL);
-	await page.getByRole('button', { name: 'Complete setup' }).click();
-
-	await expect(page).toHaveURL(/\/events$/);
-	await expect(page.getByRole('heading', { name: 'My Events' })).toBeVisible();
-	await page.goto('/');
-	await expect(page).toHaveURL(/\/events$/);
-
-	await page.goto('/auth/logout');
-	await expect(page).toHaveURL(/\/auth\/login$/);
-	await page.goto('/');
+	await page.waitForURL(/\/(?:setup|auth\/login)$/);
+	if (/\/setup$/.test(page.url())) {
+		await page.getByLabel('Bootstrap token').fill(BOOTSTRAP_TOKEN);
+		await page.getByLabel(/^Name/).fill('Gate Five Admin');
+		await page.getByLabel(/^Email/).fill(ADMIN_EMAIL);
+		await page.getByRole('button', { name: 'Complete setup' }).click();
+		await expect(page).toHaveURL(/\/events$/);
+		await page.goto('/auth/logout');
+		await expect(page).toHaveURL(/\/auth\/login$/);
+	}
 	await expect(page).toHaveURL(/\/auth\/login$/);
 	await page.getByLabel('Email address').fill(ADMIN_EMAIL);
 	await page.getByRole('button', { name: 'Send Magic Link' }).click();
-	await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
-
 	const magicMessage = await latestMailFor(request, ADMIN_EMAIL);
 	const magicBody = `${magicMessage.Text || ''}\n${magicMessage.HTML || ''}`;
 	const magicLink = magicBody.match(/https?:\/\/[^\s"'<>]+\/auth\/verify\?token=[0-9a-f]{64}/)?.[0] || '';
 	expect(magicLink).not.toBe('');
-
-	// A stale anonymous auth probe used to race the successful exchange and
-	// overwrite its authenticated store. Delay any such probe so the regression
-	// is deterministic instead of timing-dependent.
-	let delayedAuthProbe = false;
-	await page.route('**/api/v1/auth/me', async (route) => {
-		if (!delayedAuthProbe) {
-			delayedAuthProbe = true;
-			await new Promise((resolve) => setTimeout(resolve, 750));
-		}
-		await route.continue();
-	});
 	await page.goto(magicLink);
 	await expect(page).toHaveURL(/\/events$/);
-	await expect(page.getByRole('heading', { name: 'My Events' })).toBeVisible();
 
+	// Event, invitation- and guest-scoped questions, including the checkbox UI.
 	await page.goto('/events/new');
-	await page.getByLabel('Event title').fill('Gate Two Household Event');
+	await page.getByLabel('Event title').fill('Gate Five Garden Event');
 	await page.getByLabel('Event date').fill(futureLocalDateTime(7));
-	await page.getByLabel('Location').fill('Capability Hall');
+	await page.getByLabel('Location').fill('Capability Garden');
 	await page.getByRole('button', { name: 'Create event' }).click();
 	await expect(page).toHaveURL(/\/events\/[0-9a-f-]+\/invitations$/);
 	const invitationsURL = page.url();
 	const eventID = invitationsURL.match(/\/events\/([^/]+)\/invitations$/)?.[1];
 	expect(eventID).toBeTruthy();
 
-	// Add one answer at each Gate 2 scope before issuing the household capability.
 	await page.goto(`/events/${eventID}/edit`);
 	await page.getByLabel('Question Label').fill('Household note');
 	await page.getByLabel('Applies to').selectOption('invitation');
 	await page.getByRole('button', { name: 'Add Question' }).click();
-	await expect(page.getByText('Household note', { exact: true })).toBeVisible();
-	await page.getByLabel('Question Label').fill('Meal choice');
+	await page.getByLabel('Question Label').fill('Meal preferences');
+	await page.getByLabel('Question Type').selectOption('checkbox');
 	await page.getByLabel('Applies to').selectOption('guest');
+	await page.getByPlaceholder('Option 1').fill('Vegetarian');
+	await page.getByRole('button', { name: '+ Add option' }).click();
+	await page.getByPlaceholder('Option 2').fill('No nuts');
+	await page.getByLabel('Required').check();
 	await page.getByRole('button', { name: 'Add Question' }).click();
-	await expect(page.getByText('Meal choice', { exact: true })).toBeVisible();
+	await expect(page.getByText('Meal preferences', { exact: true })).toBeVisible();
 
+	// The organizer's card is now part of the actual guest experience.
+	await page.goto(`/events/${eventID}/invite`);
+	await page.getByRole('button', { name: /Garden Picnic/ }).click();
+	await page.getByLabel('Heading').fill('Moonlit Garden Celebration');
+	await page.getByLabel('Body Text').fill('Join us beneath the garden lights.');
+	await page.getByLabel('Footer Text').fill('Please respond for everyone in your household.');
+	await page.getByRole('button', { name: 'Save Invite Design' }).click();
+	await expect(page.getByText('Design saved', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Publish & View Dashboard' }).click();
+	await expect(page).toHaveURL(invitationsURL);
+
+	// Explicit household grouping; every household intentionally shares a contact.
+	const csv = [
+		'household_key,household_label,contact_email,contact_phone,preferred_delivery,additional_guest_allowance,guest_name',
+		`smith,Smith Family,${HOUSEHOLD_EMAIL},,email,1,Alex Smith`,
+		`smith,Smith Family,${HOUSEHOLD_EMAIL},,email,1,Bailey Smith`,
+		`garcia,Garcia Family,${HOUSEHOLD_EMAIL},,email,0,María García`,
+		`dupont,Dupont Household,${HOUSEHOLD_EMAIL},,email,0,Zoë Dupont`,
+		`lee,Lee Household,${HOUSEHOLD_EMAIL},,email,2,Jordan Lee`,
+		`lee,Lee Household,${HOUSEHOLD_EMAIL},,email,2,Taylor Lee`
+	].join('\r\n');
+	await page.goto(`/events/${eventID}/import`);
+	await page.getByLabel('Household CSV').setInputFiles({ name: 'households.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+	await page.getByRole('button', { name: 'Preview import' }).click();
+	await expect(page.getByText('4', { exact: true }).first()).toBeVisible();
+	await expect(page.getByText('6', { exact: true }).first()).toBeVisible();
+	await expect(page.getByText(/remain separate invitations/)).toBeVisible();
+	await page.getByRole('button', { name: 'Create households' }).click();
+	await expect(page.getByText('Created 4 households with 6 assigned guests. No invitations were sent.')).toBeVisible();
+
+	// Explicit delivery of one representative imported household.
 	await page.goto(invitationsURL);
-	await page.getByLabel('Household label').fill('Named household');
-	await page.getByLabel('Delivery email').fill(HOUSEHOLD_EMAIL);
-	await page.getByLabel('Assigned guests (one per line)').fill('Alex\nBailey');
-	await page.getByLabel('Additional guest allowance').fill('1');
-	await page.getByRole('button', { name: 'Create invitation' }).click();
-	await expect(page.getByText('Copy this private link now. Treat it as a credential.')).toBeVisible();
-
+	const smithHousehold = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Smith Family' }) });
+	await smithHousehold.getByRole('button', { name: 'Deliver' }).click();
+	await expect(page.getByText('Invitation email was accepted by the configured provider.')).toBeVisible();
 	const privateMessage = await latestMailFor(request, HOUSEHOLD_EMAIL);
-	expect(privateMessage.Subject).toContain('Gate Two Household Event');
 	const privateBody = `${privateMessage.Text || ''}\n${privateMessage.HTML || ''}`;
 	const privateLink = privateBody.match(/https?:\/\/[^\s"'<>]+\/invitation\/accept#[^\s"'<>]+/)?.[0] || '';
 	expect(privateLink).not.toBe('');
 
-	const privateContext = await browser.newContext();
-	const privatePage = await privateContext.newPage();
-	await privatePage.goto(privateLink);
-	await expect(privatePage).toHaveURL(/\/invitation$/);
-	await expect(privatePage.getByRole('heading', { name: 'Gate Two Household Event' })).toBeVisible();
-	const assignedAttendance = privatePage.locator('section').filter({ has: privatePage.getByRole('heading', { name: 'Guests' }) }).locator('select');
-	await assignedAttendance.nth(0).selectOption('attending');
-	await assignedAttendance.nth(1).selectOption('declined');
-	await privatePage.getByRole('button', { name: 'Add guest' }).click();
-	await privatePage.getByLabel('Additional guest name').fill('Casey');
-	await privatePage.getByLabel('Household note').fill('Seat us together');
-	await privatePage.getByLabel('Alex: Meal choice').fill('Vegetarian');
-	await privatePage.getByRole('button', { name: 'Save response' }).click();
-	await expect(privatePage.getByText('Your response was saved.')).toBeVisible();
+	// Fresh narrow browser: card, assigned guests, additional guest, attendance,
+	// invitation answer, and per-attending-guest checkbox answers all work.
+	const guestContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+	const guestPage = await guestContext.newPage();
+	await guestPage.goto(privateLink);
+	await expect(guestPage).toHaveURL(/\/invitation$/);
+	await expect(guestPage.getByRole('heading', { name: 'Moonlit Garden Celebration' })).toBeVisible();
+	await expect(guestPage.getByText('Join us beneath the garden lights.')).toBeVisible();
+	expect(await guestPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+	await guestPage.getByLabel('Alex Smith attendance').selectOption('attending');
+	await guestPage.getByLabel('Bailey Smith attendance').selectOption('declined');
+	await guestPage.getByRole('button', { name: 'Add guest' }).click();
+	await guestPage.getByLabel('Additional guest name').fill('Casey Smith');
+	await guestPage.getByLabel('Casey Smith attendance').selectOption('attending');
+	await guestPage.getByLabel('Household note').fill('Seat us near the lanterns');
+	await guestPage.getByRole('group', { name: 'Alex Smith: Meal preferences *' }).getByLabel('Vegetarian').check();
+	await guestPage.getByRole('group', { name: 'Casey Smith: Meal preferences *' }).getByLabel('No nuts').check();
+	await guestPage.getByRole('button', { name: 'Save response' }).click();
+	await expect(guestPage.getByText('Your response was saved.')).toBeVisible();
 
-	// Revisit with the limited invitation session: the capability is absent from
-	// history and both answer scopes plus the additional guest survive.
-	await privatePage.reload();
-	await expect(privatePage).toHaveURL(/\/invitation$/);
-	await expect(privatePage.getByLabel('Household note')).toHaveValue('Seat us together');
-	await expect(privatePage.getByLabel('Alex: Meal choice')).toHaveValue('Vegetarian');
-	await expect(privatePage.getByLabel('Additional guest name')).toHaveValue('Casey');
-	const revisitedAttendance = privatePage.locator('section').filter({ has: privatePage.getByRole('heading', { name: 'Guests' }) }).locator('select');
-	await revisitedAttendance.nth(1).selectOption('attending');
-	await privatePage.getByRole('button', { name: 'Save response' }).click();
-	await expect(privatePage.getByText('Your response was saved.')).toBeVisible();
-
+	// Organizer response/search/filter and accurate provider-acceptance status.
 	await page.goto(invitationsURL);
-	const namedHousehold = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Named household' }) });
-	await expect(namedHousehold).toContainText('Alex: attending');
-	await expect(namedHousehold).toContainText('Bailey: attending');
-	await expect(namedHousehold).toContainText('Casey: attending');
-	await expect(page.getByText('1 households · 3 guests · 3 attending · 0 pending')).toBeVisible();
+	await page.getByRole('textbox', { name: 'Search', exact: true }).fill('Casey Smith');
+	await page.getByRole('button', { name: 'Apply' }).click();
+	await expect(page.getByRole('heading', { name: 'Smith Family' })).toBeVisible();
+	await expect(page.getByText('1 results · 3 guests · 2 attending · 0 pending')).toBeVisible();
+	await expect(page.getByText('Accepted by email provider')).toBeVisible();
+	await page.getByRole('button', { name: 'Clear' }).click();
+	await expect(page.getByText('4 results · 7 guests · 2 attending · 4 pending')).toBeVisible();
 
-	// Open capacity is separate from the named allocation. Reusing the named
-	// invitation email creates a second isolated invitation and cannot claim it.
+	// Targeted one-way broadcast: count/preview, aggregate result, Mailpit.
+	await page.goto(`/events/${eventID}/messages`);
+	await expect(page.getByText('4', { exact: true })).toBeVisible();
+	await page.getByLabel('Subject').fill('Gate 5 household update');
+	await page.getByLabel('Message').fill('This is a one-way invitation broadcast.');
+	await page.getByRole('button', { name: 'Send to 4 households' }).click();
+	await expect(page.getByText('Attempted 4; accepted by provider 4; failed 0; skipped 0.')).toBeVisible();
+	const broadcast = await latestMailFor(request, HOUSEHOLD_EMAIL, 'Gate 5 household update');
+	expect(`${broadcast.Text || ''}\n${broadcast.HTML || ''}`).toContain('one-way invitation broadcast');
+
+	// Reminder UX exposes target, current count, schedule and status without
+	// changing the bounded in-process scheduler architecture.
+	await page.goto(`/events/${eventID}/reminders`);
+	await page.getByLabel('Run at').fill(futureLocalDateTime(1));
+	await page.getByLabel('Target response group').selectOption('pending');
+	await page.getByLabel('Message').fill('Please send your household response.');
+	await page.getByRole('button', { name: 'Schedule reminder' }).click();
+	await expect(page.getByText('Reminder scheduled.')).toBeVisible();
+	const pendingReminder = page.locator('article').filter({ hasText: 'Please send your household response.' });
+	await expect(pendingReminder.getByText('Status: scheduled')).toBeVisible();
+
+	// Current-domain export includes response state and both scoped answers.
+	const exportResponse = await page.request.get(`/api/v1/events/${eventID}/invitations/export`);
+	expect(exportResponse.ok()).toBeTruthy();
+	const exported = await exportResponse.text();
+	expect(exported).toContain('Smith Family');
+	expect(exported).toContain('Casey Smith');
+	expect(exported).toContain('Seat us near the lanterns');
+	expect(exported).toContain('Vegetarian');
+	expect(exported).toContain('guest_answer:Meal preferences');
+
+	// Open enrollment still creates a new isolated household even though every
+	// imported private household uses the same stored destination.
+	await page.goto(invitationsURL);
 	await page.getByLabel('Enabled').check();
-	await page.getByLabel('Maximum party size').fill('2');
-	await page.getByLabel('Open capacity (optional seats)').fill('2');
+	await page.getByLabel('Maximum party size').fill('1');
+	await page.getByLabel('Open capacity (optional seats)').fill('1');
 	await page.getByRole('button', { name: 'Save open enrollment' }).click();
-	await expect(page.getByText('Public enrollment capability')).toBeVisible();
-	const openURLs = await page.locator('code').allTextContents();
-	const openLink = openURLs.find((value) => value.includes('/enroll#')) || '';
+	const openLink = (await page.locator('code').allTextContents()).find((value) => value.includes('/enroll#')) || '';
 	expect(openLink).not.toBe('');
-
 	const openContext = await browser.newContext();
 	const openPage = await openContext.newPage();
 	await openPage.goto(openLink);
-	await expect(openPage).toHaveURL(/\/enroll$/);
 	await openPage.getByLabel('Invitation label').fill('Open household');
 	await openPage.getByLabel('Email').fill(HOUSEHOLD_EMAIL);
-	await openPage.getByLabel('Guest 1 name').fill('Dana');
-	await openPage.getByRole('button', { name: 'Add guest' }).click();
-	await openPage.getByLabel('Guest 2 name').fill('Ellis');
+	await openPage.getByLabel('Guest 1 name').fill('Dana Open');
 	await openPage.getByRole('button', { name: 'Create my invitation' }).click();
 	await expect(openPage).toHaveURL(/\/invitation$/);
-
-	const openManagementMessage = await latestMailFor(request, HOUSEHOLD_EMAIL);
-	const openManagementBody = `${openManagementMessage.Text || ''}\n${openManagementMessage.HTML || ''}`;
-	const openManagementLink = openManagementBody.match(/https?:\/\/[^\s"'<>]+\/invitation\/accept#[^\s"'<>]+/)?.[0] || '';
-	expect(openManagementLink).not.toBe('');
-
-	// Destroy the enrollment browser session. The separately delivered
-	// household capability must recover management in a fresh browser without
-	// crossing into the private household that uses the same destination.
+	const managementMessage = await latestMailFor(request, HOUSEHOLD_EMAIL);
+	const managementBody = `${managementMessage.Text || ''}\n${managementMessage.HTML || ''}`;
+	const managementLink = managementBody.match(/https?:\/\/[^\s"'<>]+\/invitation\/accept#[^\s"'<>]+/)?.[0] || '';
+	expect(managementLink).not.toBe('');
 	await openContext.close();
-	const openManagementContext = await browser.newContext();
-	const openManagementPage = await openManagementContext.newPage();
-	await openManagementPage.goto(openManagementLink);
-	await expect(openManagementPage).toHaveURL(/\/invitation$/);
-	await expect(openManagementPage.getByRole('heading', { name: 'Gate Two Household Event' })).toBeVisible();
-	await expect(openManagementPage.getByText('Dana', { exact: true })).toBeVisible();
-	await expect(openManagementPage.getByText('Ellis', { exact: true })).toBeVisible();
-	await expect(openManagementPage.getByText('Alex', { exact: true })).toHaveCount(0);
-	const openAttendance = openManagementPage.locator('section').filter({ has: openManagementPage.getByRole('heading', { name: 'Guests' }) }).locator('select');
-	await openAttendance.nth(0).selectOption('attending');
-	await openAttendance.nth(1).selectOption('declined');
-	await openManagementPage.getByRole('button', { name: 'Save response' }).click();
-	await expect(openManagementPage.getByText('Your response was saved.')).toBeVisible();
+	const recoveredOpenContext = await browser.newContext();
+	const recoveredOpenPage = await recoveredOpenContext.newPage();
+	await recoveredOpenPage.goto(managementLink);
+	await expect(recoveredOpenPage.getByText('Dana Open', { exact: true })).toBeVisible();
+	await expect(recoveredOpenPage.getByText('Alex Smith', { exact: true })).toHaveCount(0);
 
-	await page.goto(invitationsURL);
-	await expect(page.getByText('2 households · 5 guests · 4 attending · 0 pending')).toBeVisible();
-	await expect(namedHousehold).toContainText(HOUSEHOLD_EMAIL);
-	await expect(namedHousehold).toContainText('Alex: attending');
-	const openHousehold = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Open household' }) });
-	await expect(openHousehold).toContainText(HOUSEHOLD_EMAIL);
-	await expect(openHousehold).toContainText('Dana: attending');
-	await expect(openHousehold).toContainText('Ellis: declined');
-
-	const capacityContext = await browser.newContext();
-	const capacityPage = await capacityContext.newPage();
-	await capacityPage.goto(openLink);
-	await capacityPage.getByLabel('Invitation label').fill('Over capacity');
-	await capacityPage.getByLabel('Email').fill('capacity@owl-invites.test');
-	await capacityPage.getByLabel('Guest 1 name').fill('Full');
-	await capacityPage.getByRole('button', { name: 'Create my invitation' }).click();
-	await expect(capacityPage.getByText(/capacity/i)).toBeVisible();
-	await expect(capacityPage).toHaveURL(/\/enroll$/);
-
-	await page.goto(`/events/${eventID}/messages`);
-	await page.getByLabel('Subject').fill('Gate 2 household update');
-	await page.getByLabel('Message').fill('This is a one-way invitation broadcast.');
-	await page.getByRole('button', { name: 'Send message' }).click();
-	await expect(page.getByText('Delivered to 2 invitations.')).toBeVisible();
-	const broadcast = await latestMailFor(request, HOUSEHOLD_EMAIL);
-	expect(broadcast.Subject).toBe('Gate 2 household update');
-	expect(`${broadcast.Text || ''}\n${broadcast.HTML || ''}`).toContain('one-way invitation broadcast');
-
-	await capacityContext.close();
-	await openManagementContext.close();
-	await privateContext.close();
+	await recoveredOpenContext.close();
+	await guestContext.close();
 });

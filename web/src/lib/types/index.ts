@@ -46,7 +46,7 @@ export interface Reminder {
 	remindAt: string;
 	targetGroup: 'all' | 'attending' | 'maybe' | 'declined' | 'pending';
 	message: string;
-	status: 'scheduled' | 'sent' | 'cancelled' | 'failed';
+	status: 'scheduled' | 'processing' | 'sent' | 'cancelled' | 'failed';
 	createdAt: string;
 	updatedAt: string;
 }
@@ -140,6 +140,48 @@ export interface InvitationHousehold {
 	questions: InvitationQuestion[];
 	invitationAnswers: Array<{ questionId: string; answer: string }>;
 	guestAnswers: Array<{ guestId: string; questionId: string; answer: string }>;
+	presentation: {
+		templateId: string;
+		heading: string;
+		body: string;
+		footer: string;
+		primaryColor: string;
+		secondaryColor: string;
+		font: string;
+		backgroundImage?: string;
+	};
+	latestDelivery?: {
+		status: 'pending' | 'sent' | 'failed';
+		deliveryStatus: 'unknown' | 'delivered' | 'opened' | 'clicked' | 'bounced' | 'complained';
+		provider: string;
+		error?: string;
+		attemptedAt: string;
+		sentAt?: string;
+	};
+}
+
+export interface InvitationImportIssue {
+	row?: number;
+	field?: string;
+	message: string;
+}
+
+export interface InvitationImportHousehold {
+	householdKey: string;
+	householdLabel: string;
+	contactEmail?: string;
+	contactPhone?: string;
+	preferredDelivery: 'email' | 'sms' | 'none';
+	additionalGuestAllowance: number;
+	assignedGuestNames: string[];
+}
+
+export interface InvitationImportPreview {
+	householdCount: number;
+	assignedGuestCount: number;
+	households: InvitationImportHousehold[];
+	errors: InvitationImportIssue[];
+	warnings: InvitationImportIssue[];
 }
 
 export type InviteTemplate = {

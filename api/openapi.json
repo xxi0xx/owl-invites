@@ -192,9 +192,35 @@
           "sortOrder": { "type": "integer" }
         }
       },
+      "GuestInvitationPresentation": {
+        "type": "object",
+        "required": ["templateId", "heading", "body", "footer", "primaryColor", "secondaryColor", "font"],
+        "properties": {
+          "templateId": { "type": "string" },
+          "heading": { "type": "string" },
+          "body": { "type": "string" },
+          "footer": { "type": "string" },
+          "primaryColor": { "type": "string" },
+          "secondaryColor": { "type": "string" },
+          "font": { "type": "string" },
+          "backgroundImage": { "type": "string", "description": "Revalidated public upload or HTTPS image URL. Storage paths and arbitrary invite custom data are never exposed." }
+        }
+      },
+      "InvitationDeliverySummary": {
+        "type": "object",
+        "required": ["status", "deliveryStatus", "provider", "attemptedAt"],
+        "properties": {
+          "status": { "type": "string", "enum": ["pending", "sent", "failed"] },
+          "deliveryStatus": { "type": "string", "enum": ["unknown", "delivered", "opened", "clicked", "bounced", "complained"] },
+          "provider": { "type": "string" },
+          "error": { "type": "string" },
+          "attemptedAt": { "type": "string", "format": "date-time" },
+          "sentAt": { "type": "string", "format": "date-time" }
+        }
+      },
       "InvitationHousehold": {
         "type": "object",
-        "required": ["invitation", "event", "response", "guests", "questions", "invitationAnswers", "guestAnswers"],
+        "required": ["invitation", "event", "response", "guests", "questions", "invitationAnswers", "guestAnswers", "presentation"],
         "properties": {
           "invitation": { "$ref": "#/components/schemas/Invitation" },
           "event": { "type": "object", "additionalProperties": true },
@@ -202,7 +228,9 @@
           "guests": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationGuest" } },
           "questions": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationQuestion" } },
           "invitationAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-          "guestAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+          "guestAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "presentation": { "$ref": "#/components/schemas/GuestInvitationPresentation" },
+          "latestDelivery": { "$ref": "#/components/schemas/InvitationDeliverySummary", "description": "Organizer-only latest email attempt. Omitted from guest household-session responses." }
         }
       },
       "CreateInvitationRequest": {
@@ -217,6 +245,25 @@
           "additionalGuestAllowance": { "type": "integer", "minimum": 0, "maximum": 50 },
           "assignedGuestNames": { "type": "array", "minItems": 1, "items": { "type": "string" } },
           "send": { "type": "boolean", "description": "When true, preferredDeliveryMethod must be email and contactEmail must be valid. Creation remains successful if the post-commit email attempt later fails." }
+        }
+      },
+      "UpdateInvitationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "preferredDeliveryMethod", "additionalGuestAllowance", "assignedGuests"],
+        "properties": {
+          "label": { "type": "string", "maxLength": 200 },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" },
+          "preferredDeliveryMethod": { "type": "string", "enum": ["email", "sms", "none"] },
+          "additionalGuestAllowance": { "type": "integer", "minimum": 0, "maximum": 50 },
+          "assignedGuests": {
+            "type": "array", "minItems": 1, "maxItems": 100,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["name"],
+              "properties": { "id": { "type": "string", "format": "uuid" }, "name": { "type": "string", "maxLength": 200 } }
+            }
+          }
         }
       },
       "InvitationDeliveryResult": {
@@ -249,10 +296,30 @@
         "required": ["version", "assignedGuests", "additionalGuests", "invitationAnswers", "guestAnswers"],
         "properties": {
           "version": { "type": "integer", "minimum": 1 },
-          "assignedGuests": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-          "additionalGuests": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "assignedGuests": { "type": "array", "items": { "$ref": "#/components/schemas/AssignedGuestAttendanceInput" } },
+          "additionalGuests": { "type": "array", "items": { "$ref": "#/components/schemas/AdditionalGuestResponseInput" } },
           "invitationAnswers": { "type": "object", "additionalProperties": true },
           "guestAnswers": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "AssignedGuestAttendanceInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["guestId", "attendance"],
+        "properties": {
+          "guestId": { "type": "string", "format": "uuid" },
+          "attendance": { "type": "string", "enum": ["pending", "attending", "maybe", "declined"] }
+        }
+      },
+      "AdditionalGuestResponseInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "attendance"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Persisted additional guest ID when updating an existing guest." },
+          "clientKey": { "type": "string", "maxLength": 100, "description": "Non-persisted correlation key for answers belonging to a new guest in this atomic submission." },
+          "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "attendance": { "type": "string", "enum": ["pending", "attending", "maybe", "declined"] }
         }
       },
       "RecoveryRequest": {
@@ -313,8 +380,111 @@
       },
       "InvitationMessageResult": {
         "type": "object",
-        "required": ["sent"],
-        "properties": { "sent": { "type": "integer", "minimum": 0 } }
+        "required": ["attempted", "accepted", "failed", "skipped"],
+        "properties": {
+          "attempted": { "type": "integer", "minimum": 0 },
+          "accepted": { "type": "integer", "minimum": 0, "description": "Accepted by the configured email provider; not necessarily end-recipient delivery." },
+          "failed": { "type": "integer", "minimum": 0 },
+          "skipped": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "InvitationMessagePreviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["recipientGroup"],
+        "properties": { "recipientGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] } }
+      },
+      "InvitationMessagePreview": {
+        "type": "object",
+        "required": ["recipientGroup", "recipientHouseholds"],
+        "properties": {
+          "recipientGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "recipientHouseholds": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "InvitationImportIssue": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "row": { "type": "integer", "minimum": 0 },
+          "field": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      },
+      "InvitationImportHousehold": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["householdKey", "householdLabel", "preferredDelivery", "additionalGuestAllowance", "assignedGuestNames"],
+        "properties": {
+          "householdKey": { "type": "string", "maxLength": 100, "description": "Import-only grouping value; never persisted as invitation identity." },
+          "householdLabel": { "type": "string", "maxLength": 200 },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" },
+          "preferredDelivery": { "type": "string", "enum": ["email", "sms", "none"] },
+          "additionalGuestAllowance": { "type": "integer", "minimum": 0, "maximum": 50 },
+          "assignedGuestNames": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "type": "string", "maxLength": 200 } }
+        }
+      },
+      "InvitationImportPreview": {
+        "type": "object",
+        "required": ["householdCount", "assignedGuestCount", "households", "errors", "warnings"],
+        "properties": {
+          "householdCount": { "type": "integer", "minimum": 0 },
+          "assignedGuestCount": { "type": "integer", "minimum": 0 },
+          "households": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationImportHousehold" } },
+          "errors": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationImportIssue" } },
+          "warnings": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationImportIssue" } }
+        }
+      },
+      "InvitationImportCommitRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["households"],
+        "properties": {
+          "households": { "type": "array", "minItems": 1, "maxItems": 1000, "items": { "$ref": "#/components/schemas/InvitationImportHousehold" } }
+        }
+      },
+      "InvitationImportCommitResult": {
+        "type": "object",
+        "required": ["householdCount", "assignedGuestCount", "invitationIds"],
+        "properties": {
+          "householdCount": { "type": "integer", "minimum": 1 },
+          "assignedGuestCount": { "type": "integer", "minimum": 1 },
+          "invitationIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
+      "Reminder": {
+        "type": "object",
+        "required": ["id", "eventId", "remindAt", "targetGroup", "message", "status", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "remindAt": { "type": "string", "format": "date-time" },
+          "targetGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "message": { "type": "string", "maxLength": 10000 },
+          "status": { "type": "string", "enum": ["scheduled", "processing", "sent", "cancelled", "failed"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateReminderRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["remindAt", "targetGroup", "message"],
+        "properties": {
+          "remindAt": { "type": "string", "format": "date-time" },
+          "targetGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "message": { "type": "string", "maxLength": 10000 }
+        }
+      },
+      "UpdateReminderRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "remindAt": { "type": "string", "format": "date-time" },
+          "targetGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "message": { "type": "string", "maxLength": 10000 }
+        }
       },
       "OpenEnrollmentRequest": {
         "type": "object",
@@ -504,6 +674,11 @@
       "get": {
         "operationId": "listInvitations",
         "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string", "maxLength": 200 }, "description": "Authorized search across household label, stored contact, and active guest names." },
+          { "name": "response", "in": "query", "schema": { "type": "string", "enum": ["submitted", "not_submitted"] } },
+          { "name": "attendance", "in": "query", "schema": { "type": "string", "enum": ["pending", "attending", "maybe", "declined"] } }
+        ],
         "responses": { "200": { "description": "Invitation households for the event", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } } }
       },
       "post": {
@@ -511,6 +686,40 @@
         "security": [{ "sessionCookie": [] }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateInvitationRequest" } } } },
         "responses": { "201": { "description": "Private invitation created", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/CreateInvitationResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/import/template": {
+      "get": {
+        "operationId": "downloadInvitationImportTemplate",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Household-aware CSV import template", "content": { "text/csv": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/import/preview": {
+      "post": {
+        "operationId": "previewInvitationImport",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "multipart/form-data": { "schema": { "type": "object", "required": ["file"], "properties": { "file": { "type": "string", "format": "binary" } } } } } },
+        "responses": { "200": { "description": "Normalized non-persisting import preview", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationImportPreview" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/import/commit": {
+      "post": {
+        "operationId": "commitInvitationImport",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationImportCommitRequest" } } } },
+        "responses": { "201": { "description": "All previewed households created atomically without delivery", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationImportCommitResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/export": {
+      "get": {
+        "operationId": "exportInvitationResponses",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "One flattened row per active guest with household, response, attendance, and scoped answer data", "content": { "text/csv": { "schema": { "type": "string" } } } } }
       }
     },
     "/events/{eventId}/invitations/{invitationId}": {
@@ -522,6 +731,12 @@
         "operationId": "getInvitation",
         "security": [{ "sessionCookie": [] }],
         "responses": { "200": { "description": "Invitation household", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } }
+      },
+      "put": {
+        "operationId": "updateInvitationHousehold",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateInvitationRequest" } } } },
+        "responses": { "200": { "description": "Household metadata and assigned guest definition updated without delivery or capability rotation", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } }
       }
     },
     "/events/{eventId}/invitations/{invitationId}/deliver": {
@@ -565,6 +780,43 @@
         "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationMessageRequest" } } } },
         "responses": { "201": { "description": "One-way invitation broadcast sent", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationMessageResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/messages/preview": {
+      "post": {
+        "operationId": "previewInvitationHouseholdMessage",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationMessagePreviewRequest" } } } },
+        "responses": { "200": { "description": "Authorized household recipient count without destination disclosure", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationMessagePreview" } } } } } } }
+      }
+    },
+    "/reminders/event/{eventId}": {
+      "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": {
+        "operationId": "listEventReminders",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Event reminders", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Reminder" } } } } } } } }
+      },
+      "post": {
+        "operationId": "createEventReminder",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateReminderRequest" } } } },
+        "responses": { "201": { "description": "Reminder scheduled", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/Reminder" } } } } } } }
+      }
+    },
+    "/reminders/{reminderId}": {
+      "parameters": [{ "name": "reminderId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "put": {
+        "operationId": "updateEventReminder",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateReminderRequest" } } } },
+        "responses": { "200": { "description": "Scheduled reminder updated", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/Reminder" } } } } } } }
+      },
+      "delete": {
+        "operationId": "cancelEventReminder",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Scheduled reminder cancelled", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
       }
     },
     "/events/{eventId}/open-enrollment": {

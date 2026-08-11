@@ -177,6 +177,9 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	}
 	if notifRegistry.Has(notification.ChannelEmail) {
 		invitationService.SetEmailSender(func(ctx context.Context, eventID, invitationID, to, subject, htmlBody, plainBody string) error {
+			if suppressionService.IsSuppressed(ctx, to, eventID) {
+				return invitationdomain.ErrDeliverySuppressed
+			}
 			return notifService.Send(ctx, eventID, invitationID, notification.ChannelEmail,
 				&notification.Message{To: to, Subject: subject, Body: htmlBody, Plain: plainBody})
 		})

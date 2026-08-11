@@ -8,8 +8,9 @@ send email invitations, and manage responses. Guests use isolated household
 capabilities or open enrollment without creating an account.
 
 > [!WARNING]
-> Owl Invites is in staged, pre-stable redevelopment. Gates 1–4 are engineering
-> milestones, not a stable production release. No stable image or semantic
+> Owl Invites is in staged, pre-stable redevelopment. Gates 1–5 are engineering
+> milestones, not a stable production release. Gate 5 is release-candidate
+> evidence, not a production release. No stable image or semantic
 > version is published. Review images, when available, are identified only by
 > an immutable `sha-<full-commit>` tag and digest—never deploy `latest`.
 
@@ -19,6 +20,14 @@ capabilities or open enrollment without creating an account.
 - invitations, assigned guests, RSVP responses, questions, and open enrollment
   use the isolated Gate 2 capability model;
 - invitation delivery and recovery are email-only;
+- household CSV import previews and revalidates explicit grouping before one
+  atomic create-only commit; equal contacts never merge households;
+- organizer reporting export reflects household, guest, attendance, response,
+  and scoped-answer state while defanging spreadsheet formulas;
+- the configured invitation card appears in the authorized guest household
+  experience without exposing organizer-only data;
+- organizers can search, filter, safely edit, explicitly deliver, rotate, and
+  revoke household invitations, with useful delivery visibility;
 - SQLite and PostgreSQL are tested, including race and migration suites;
 - SQLite and PostgreSQL backup/restore drills preserve household capabilities;
 - production containers run as UID/GID 10001 with a read-only root filesystem,
@@ -97,6 +106,25 @@ The same executable provides operator commands:
 ./bin/owl-invites admin promote --email operator@example.com
 ```
 
+## Supported product workflow
+
+After first-run setup, an organizer can create and publish an event, configure
+RSVP questions and its invitation card, then build households manually or
+preview and commit an explicit-key CSV import. Import never sends email. The
+organizer reviews the Invitations screen and deliberately delivers selected
+households.
+
+Guests follow the emailed private household capability, see the configured
+card and only their household, record assigned/additional-guest attendance and
+scoped answers, and update the response later through the household session or
+email recovery. Organizers can search/filter the resulting state, send a
+one-way targeted message or schedule a reminder, inspect honest provider
+delivery status, and export a current-domain reporting CSV.
+
+See [Gate 5 product maturation](docs/gate-5-product-maturation.md) for the exact
+CSV columns and limits, create-only semantics, presentation security boundary,
+delivery limitations, recovery guarantees, and deferred features.
+
 ## SQLite path compatibility
 
 When `DB_DSN` is explicitly set, Owl Invites uses it exactly. With SQLite and
@@ -133,6 +161,7 @@ healthy.
 - [Gate 2: invitation domain](docs/gate-2-invitation-domain.md)
 - [Gate 3: production readiness](docs/gate-3-production-readiness.md)
 - [Gate 4: controlled Owl rebrand](docs/gate-4-owl-rebrand.md)
+- [Gate 5: product maturation and release candidate](docs/gate-5-product-maturation.md)
 
 Owl Invites derives from an MIT-licensed upstream project. See
 [provenance](docs/provenance.md), [NOTICE](NOTICE),

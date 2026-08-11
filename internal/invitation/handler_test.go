@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,6 +75,121 @@ func postPublicJSON(t *testing.T, handler http.Handler, path string, value any) 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, req)
 	return response
+}
+
+func postCSV(t *testing.T, handler http.Handler, path, contents string) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "households.csv")
+	require.NoError(t, err)
+	_, err = part.Write([]byte(contents))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	req := httptest.NewRequest(http.MethodPost, path, &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	return response
+}
+
+func TestOrganizerImportPreviewCommitAndPublicIsolation(t *testing.T) {
+	f, organizer, _ := organizerHandlerFixture(t)
+	csvData := importHeader +
+		"one,First Household,same@example.com,,email,1,Alex\n" +
+		"one,First Household,same@example.com,,email,1,Bailey\n" +
+		"two,Second Household,same@example.com,,email,0,Casey\n"
+	previewResponse := postCSV(t, organizer,
+		"/events/"+f.eventID+"/invitations/import/preview", csvData)
+	require.Equal(t, http.StatusOK, previewResponse.Code, previewResponse.Body.String())
+	var previewEnvelope struct {
+		Data ImportPreview `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(previewResponse.Body.Bytes(), &previewEnvelope))
+	require.Empty(t, previewEnvelope.Data.Errors)
+	assert.Equal(t, 2, previewEnvelope.Data.HouseholdCount)
+	assert.Equal(t, 3, previewEnvelope.Data.AssignedGuestCount)
+	items, err := f.store.ListByEvent(context.Background(), f.eventID)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+
+	commitResponse := requestJSON(t, organizer, http.MethodPost,
+		"/events/"+f.eventID+"/invitations/import/commit",
+		ImportCommitRequest{Households: previewEnvelope.Data.Households}, nil)
+	require.Equal(t, http.StatusCreated, commitResponse.Code, commitResponse.Body.String())
+	items, err = f.store.ListByEvent(context.Background(), f.eventID)
+	require.NoError(t, err)
+	assert.Len(t, items, 2)
+	filtered := requestJSON(t, organizer, http.MethodGet,
+		"/events/"+f.eventID+"/invitations?search=Second&response=not_submitted&attendance=pending", nil, nil)
+	require.Equal(t, http.StatusOK, filtered.Code, filtered.Body.String())
+	assert.Contains(t, filtered.Body.String(), "Second Household")
+	assert.NotContains(t, filtered.Body.String(), "First Household")
+
+	updateResponse := requestJSON(t, organizer, http.MethodPut,
+		"/events/"+f.eventID+"/invitations/"+items[0].Invitation.ID,
+		UpdateInvitationRequest{
+			Label: "Updated First Household", ContactEmail: ptr("updated@example.com"),
+			PreferredDeliveryMethod: "email", AdditionalGuestAllowance: 2,
+			AssignedGuests: []AssignedGuestEdit{
+				{ID: items[0].Guests[0].ID, Name: "Updated Alex"},
+				{ID: items[0].Guests[1].ID, Name: "Bailey"},
+			},
+		}, nil)
+	require.Equal(t, http.StatusOK, updateResponse.Code, updateResponse.Body.String())
+	assert.Contains(t, updateResponse.Body.String(), "Updated First Household")
+	assert.NotContains(t, updateResponse.Body.String(), "accessUrl",
+		"ordinary organizer updates must not expose a raw household capability")
+	exportResponse := requestJSON(t, organizer, http.MethodGet,
+		"/events/"+f.eventID+"/invitations/export", nil, nil)
+	require.Equal(t, http.StatusOK, exportResponse.Code, exportResponse.Body.String())
+	assert.Equal(t, "text/csv; charset=utf-8", exportResponse.Header().Get("Content-Type"))
+	assert.Contains(t, exportResponse.Body.String(), "invitation_id")
+	assert.Contains(t, exportResponse.Body.String(), "First Household")
+
+	_, public, _ := publicHandlerFixture(t)
+	publicResponse := postCSV(t, public, "/invitations/import/preview", csvData)
+	assert.Equal(t, http.StatusNotFound, publicResponse.Code,
+		"public invitation routes must never expose organizer import")
+	publicExport := requestJSON(t, public, http.MethodGet, "/invitations/export", nil, nil)
+	assert.Equal(t, http.StatusNotFound, publicExport.Code,
+		"public invitation routes must never expose organizer export")
+	publicUpdate := requestJSON(t, public, http.MethodPut, "/invitations/not-public", UpdateInvitationRequest{}, nil)
+	assert.Equal(t, http.StatusNotFound, publicUpdate.Code,
+		"public invitation routes must never expose organizer household editing")
+}
+
+func TestOrganizerMessagePreviewAndAggregateDeliveryResult(t *testing.T) {
+	f, organizer, _ := organizerHandlerFixture(t)
+	f.create("First", "first@example.com", 0, "First")
+	f.create("Second", "second@example.com", 0, "Second")
+	f.service.SetEmailSender(func(_ context.Context, _, _, to, _, _, _ string) error {
+		if to == "second@example.com" {
+			return errors.New("deliberate delivery failure")
+		}
+		return nil
+	})
+	preview := requestJSON(t, organizer, http.MethodPost,
+		"/events/"+f.eventID+"/invitations/messages/preview",
+		MessagePreviewRequest{RecipientGroup: "all"}, nil)
+	require.Equal(t, http.StatusOK, preview.Code, preview.Body.String())
+	assert.Contains(t, preview.Body.String(), `"recipientHouseholds":2`)
+	assert.NotContains(t, preview.Body.String(), "first@example.com")
+	assert.NotContains(t, preview.Body.String(), "second@example.com")
+
+	result := requestJSON(t, organizer, http.MethodPost,
+		"/events/"+f.eventID+"/invitations/messages",
+		MessageRequest{RecipientGroup: "all", Subject: "Update", Body: "Details"}, nil)
+	require.Equal(t, http.StatusCreated, result.Code, result.Body.String())
+	assert.Contains(t, result.Body.String(), `"attempted":2`)
+	assert.Contains(t, result.Body.String(), `"accepted":1`)
+	assert.Contains(t, result.Body.String(), `"failed":1`)
+	assert.NotContains(t, result.Body.String(), "second@example.com")
+
+	_, public, _ := publicHandlerFixture(t)
+	publicPreview := requestJSON(t, public, http.MethodPost, "/invitations/messages/preview",
+		MessagePreviewRequest{RecipientGroup: "all"}, nil)
+	assert.Equal(t, http.StatusNotFound, publicPreview.Code)
 }
 
 func TestCapabilityExchangeDoesNotLeakCapabilityAndSetsScopedCookie(t *testing.T) {

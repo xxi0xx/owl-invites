@@ -666,6 +666,7 @@
 		line-height: 1.2;
 		margin: 0;
 		font-family: var(--font-display);
+		overflow-wrap: anywhere;
 	}
 
 	.decor-emoji {
@@ -732,5 +733,42 @@
 		font-size: 0.875rem;
 		font-style: italic;
 		margin: 0;
+	}
+
+	@media (max-width: 640px) {
+		.invite-card {
+			padding: 1.5rem 1rem;
+			border-radius: 1rem;
+		}
+		.card-header {
+			gap: 0.4rem;
+			margin-bottom: 1rem;
+		}
+		.card-heading,
+		.balloon-party .card-heading,
+		.confetti .card-heading,
+		.unicorn-magic .card-heading,
+		.superhero .card-heading,
+		.garden-picnic .card-heading,
+		.elegant-affair .card-heading,
+		.tropical-vibes .card-heading,
+		.chalkboard .card-heading {
+			font-size: 1.5rem;
+		}
+		.detail-row {
+			align-items: flex-start;
+			font-size: 0.875rem;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.confetti-dot,
+		.sparkle,
+		.leaf,
+		.flower,
+		.wave,
+		.decor-emoji {
+			animation: none !important;
+		}
 	}
 </style>

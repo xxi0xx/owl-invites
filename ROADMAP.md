@@ -48,6 +48,13 @@ recovery destinations, not identity. The authorization, household-isolation,
 capability, recovery, and open-enrollment boundaries established in Gates 1–5
 remain product principles, not temporary implementation details.
 
+### Data portability
+
+Owl Invites should make users' event data reasonably exportable and should not
+use data captivity as a retention strategy. Self-hosted and any future managed
+offerings should preserve practical ways for operators to retrieve and move
+their data.
+
 ### Open-source respect
 
 Owl Invites remains MIT-licensed. Self-hosted users should not be intentionally
@@ -118,7 +125,7 @@ separate explicit human decision.
 
 ## 4. Near-term v1.x priorities
 
-After a separate v1.0 decision, likely near-term work should remain focused:
+Likely near-term work, whether justified during release-candidate burn-down or pursued in early v1.x development, should remain focused:
 
 1. Magic Setup and Configuration Doctor investigations that reduce deployment
    and configuration friction without weakening operator control.

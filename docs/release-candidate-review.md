@@ -151,7 +151,12 @@ recommendation.
 
 ## UX and accessibility
 
-- [ ] Complete desktop organizer workflows in the supported major browsers.
+- [ ] Define and record the v1.0 browser-support baseline, then complete the
+      critical workflows against it. The initial RC target should include
+      current stable Chrome/Chromium, Firefox, Edge, and Safari, with the
+      guest RSVP flow also exercised on representative iOS Safari and Android
+      Chrome where practical. Record any platform that could not be directly
+      tested rather than implying support was verified.
 - [ ] Complete the guest invitation and RSVP flow at realistic narrow phone
       widths and with long labels, Unicode names, validation errors, and slow
       or failed requests.

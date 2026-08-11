@@ -3,7 +3,7 @@ BUILD_DIR := ./bin
 CMD_DIR := ./cmd/owl-invites
 CGO_ENABLED := 1
 
-.PHONY: all build dev test clean lint lint-routes frontend embed
+.PHONY: all build dev test clean lint lint-brand lint-routes frontend embed
 
 all: lint test build
 
@@ -38,6 +38,9 @@ clean:
 lint:
 	@echo "Running linter..."
 	golangci-lint run ./...
+
+lint-brand:
+	@./scripts/lint-brand-residue.sh
 
 lint-routes:
 	@./scripts/lint-api-routes.sh

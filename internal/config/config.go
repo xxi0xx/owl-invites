@@ -15,6 +15,7 @@ import (
 const (
 	DefaultSQLiteDSN       = "/data/owl-invites.db"
 	LegacyDefaultSQLiteDSN = "/data/openrsvp.db"
+	legacyInstanceName     = "OpenRSVP"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -369,7 +370,7 @@ func isObviousSecretPlaceholder(value string) bool {
 //	cfg.ApplyInstanceOverrides(overrides)
 func (c *Config) ApplyInstanceOverrides(overrides map[string]string) {
 	if v, ok := overrides["instance_name"]; ok && v != "" {
-		if v == "OpenRSVP" {
+		if v == legacyInstanceName {
 			// Migration 31 persisted the upstream product name as a setup default.
 			// Treat only that exact inherited default as Owl Invites; arbitrary
 			// operator-selected instance names remain authoritative.

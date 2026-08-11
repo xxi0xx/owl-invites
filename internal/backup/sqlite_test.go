@@ -22,7 +22,10 @@ import (
 
 const restoreSecret = "4c64fb646f28c3cf57d320675a546e290173f4ab91786764"
 
-func TestSQLiteBackupVerifyRestorePreservesCapabilityAndState(t *testing.T) {
+// TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState is the executable
+// compatibility drill: restore verified Gate 3 state at the inherited default
+// path, let Gate 4 discover it, and prove persisted capabilities still work.
+func TestGate3ToGate4SQLiteUpgradePreservesCapabilityAndState(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	sourceDatabase := filepath.Join(root, "source.db")

@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// These identifiers are frozen compatibility values. Changing either one can
+// make calendar clients treat an existing event as a new event.
+const (
+	legacyICSUIDSuffix = "@openrsvp"
+	legacyICSProductID = "-//OpenRSVP//EN"
+)
+
 // EventData holds the fields needed to generate calendar entries.
 type EventData struct {
 	ID          string
@@ -48,12 +55,12 @@ func GenerateICS(e EventData) string {
 	}
 	dtend := eventEnd.Format("20060102T150405")
 
-	uid := e.ID + "@openrsvp"
+	uid := e.ID + legacyICSUIDSuffix
 
 	var b strings.Builder
 	b.WriteString("BEGIN:VCALENDAR\r\n")
 	b.WriteString("VERSION:2.0\r\n")
-	b.WriteString("PRODID:-//OpenRSVP//EN\r\n")
+	b.WriteString("PRODID:" + legacyICSProductID + "\r\n")
 	b.WriteString("CALSCALE:GREGORIAN\r\n")
 	b.WriteString("METHOD:PUBLISH\r\n")
 

@@ -11,6 +11,14 @@ env:
   GOTOOLCHAIN: local
 
 jobs:
+  branding:
+    name: Brand residue and provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Enforce Owl Invites identity and documented exceptions
+        run: bash scripts/lint-brand-residue.sh
+
   release-policy:
     name: Release gate policy
     runs-on: ubuntu-latest
@@ -253,7 +261,7 @@ jobs:
   docker:
     name: Production container
     runs-on: ubuntu-latest
-    needs: [release-policy, frontend, backend-sqlite, backend-postgres, postgres-restore, e2e, lint, govulncheck]
+    needs: [branding, release-policy, frontend, backend-sqlite, backend-postgres, postgres-restore, e2e, lint, govulncheck]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0

@@ -43,7 +43,6 @@ docker run --detach \
   --env PORT=8080 \
   --env BASE_URL=https://invites.example \
   --env DB_DRIVER=sqlite \
-  --env DB_DSN=/data/openrsvp.db \
   --env UPLOADS_DIR=/data/uploads \
   --env OWL_INVITES_SECRET_KEY_FILE=/run/secrets/owl_invites_secret_key \
   --env ALLOW_SIGNUPS=false \
@@ -68,6 +67,8 @@ jq -e --arg commit "$EXPECTED_COMMIT" '.status == "ok" and .commit == $commit' "
 docker exec "$container" wget -qO- http://127.0.0.1:8080/setup > "$work/frontend.html"
 grep -Fqi '<!doctype html>' "$work/frontend.html"
 grep -Fq '/_app/immutable/' "$work/frontend.html"
+grep -Fq 'Owl Invites' "$work/frontend.html"
+docker exec "$container" test -f /data/owl-invites.db
 
 docker inspect "$container" > "$work/inspect.json"
 jq -e '.[0].Config.User == "10001:10001"' "$work/inspect.json" >/dev/null

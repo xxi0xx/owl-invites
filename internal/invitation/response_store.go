@@ -88,6 +88,7 @@ func (s *Store) SubmitResponse(ctx context.Context, invitationID string, req Sub
 	}
 
 	keptAdditional := make(map[string]bool)
+	clientKeys := make(map[string]bool)
 	for i := range req.AdditionalGuests {
 		input := &req.AdditionalGuests[i]
 		name := strings.TrimSpace(input.Name)
@@ -103,6 +104,16 @@ func (s *Store) SubmitResponse(ctx context.Context, invitationID string, req Sub
 
 		guestID := input.ID
 		if guestID == "" {
+			clientKey := strings.TrimSpace(input.ClientKey)
+			if clientKey != "" {
+				if len(clientKey) > 100 {
+					return errcode.Validationf("additional guest client key must be 100 characters or fewer")
+				}
+				if clientKeys[clientKey] || assigned[clientKey] != nil || additional[clientKey] != nil {
+					return errcode.Validationf("additional guest client key is invalid or duplicated")
+				}
+				clientKeys[clientKey] = true
+			}
 			guestID = uuid.Must(uuid.NewV7()).String()
 			input.ID = guestID
 			if _, err := tx.ExecContext(ctx, `INSERT INTO guests (
@@ -111,7 +122,14 @@ func (s *Store) SubmitResponse(ctx context.Context, invitationID string, req Sub
 				name, len(assigned)+i, now, now); err != nil {
 				return fmt.Errorf("create additional guest: %w", err)
 			}
+			if answers, exists := req.GuestAnswers[clientKey]; clientKey != "" && exists {
+				delete(req.GuestAnswers, clientKey)
+				req.GuestAnswers[guestID] = answers
+			}
 		} else {
+			if strings.TrimSpace(input.ClientKey) != "" {
+				return errcode.Validationf("persisted additional guests must not include a client key")
+			}
 			if additional[guestID] == nil {
 				return errcode.Validationf("additional guest does not belong to this invitation")
 			}

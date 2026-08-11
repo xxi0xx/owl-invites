@@ -212,10 +212,22 @@ export type InvitationCapabilityRequest = {
 
 export type InvitationSubmitRequest = {
 	"version": number;
-	"assignedGuests": Array<Record<string, unknown>>;
-	"additionalGuests": Array<Record<string, unknown>>;
+	"assignedGuests": Array<AssignedGuestAttendanceInput>;
+	"additionalGuests": Array<AdditionalGuestResponseInput>;
 	"invitationAnswers": Record<string, unknown>;
 	"guestAnswers": Record<string, unknown>;
+};
+
+export type AssignedGuestAttendanceInput = {
+	"guestId": string;
+	"attendance": "pending" | "attending" | "maybe" | "declined";
+};
+
+export type AdditionalGuestResponseInput = {
+	"id"?: string;
+	"clientKey"?: string;
+	"name": string;
+	"attendance": "pending" | "attending" | "maybe" | "declined";
 };
 
 export type RecoveryRequest = {

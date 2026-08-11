@@ -12,7 +12,7 @@
 	let saving = $state(false);
 	let saved = $state(false);
 	let attendance = $state<Record<string, InvitationAttendance>>({});
-	let additional = $state<Array<{ id?: string; name: string; attendance: InvitationAttendance }>>([]);
+	let additional = $state<Array<{ id?: string; clientKey?: string; name: string; attendance: InvitationAttendance }>>([]);
 	let invitationAnswers = $state<Record<string, string>>({});
 	let guestAnswers = $state<Record<string, Record<string, string>>>({});
 
@@ -57,7 +57,7 @@
 
 	function addGuest() {
 		if (!household || additional.length >= household.invitation.additionalGuestAllowance) return;
-		additional = [...additional, { name: '', attendance: 'attending' }];
+		additional = [...additional, { clientKey: `new-${crypto.randomUUID()}`, name: '', attendance: 'attending' }];
 	}
 
 	function removeGuest(index: number) {
@@ -80,6 +80,37 @@
 		}
 	}
 
+	function selectedOptions(question: InvitationQuestion, guestId?: string): string[] {
+		const raw = question.scope === 'invitation'
+			? invitationAnswers[question.id]
+			: (guestId ? guestAnswers[guestId]?.[question.id] : '');
+		if (!raw) return [];
+		try {
+			const values = JSON.parse(raw);
+			return Array.isArray(values) ? values.filter((value) => typeof value === 'string') : [];
+		} catch {
+			return [];
+		}
+	}
+
+	function toggleOption(question: InvitationQuestion, option: string, checked: boolean, guestId?: string) {
+		const current = selectedOptions(question, guestId);
+		const next = checked ? [...new Set([...current, option])] : current.filter((value) => value !== option);
+		answerQuestion(question, JSON.stringify(next), guestId);
+	}
+
+	function attendingQuestionGuests(): Array<{ key: string; name: string }> {
+		if (!household) return [];
+		return [
+			...household.guests
+				.filter((guest) => guest.origin === 'assigned' && attendance[guest.id] === 'attending')
+				.map((guest) => ({ key: guest.id, name: guest.name })),
+			...additional
+				.filter((guest) => guest.attendance === 'attending' && Boolean(guest.id || guest.clientKey))
+				.map((guest) => ({ key: guest.id ?? guest.clientKey!, name: guest.name || 'Additional guest' }))
+		];
+	}
+
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (!household) return;
@@ -91,7 +122,7 @@
 				assignedGuests: household.guests.filter((guest) => guest.origin === 'assigned').map((guest) => ({
 					guestId: guest.id, attendance: attendance[guest.id]
 				})),
-				additionalGuests: additional.map((guest) => ({ id: guest.id, name: guest.name, attendance: guest.attendance })),
+				additionalGuests: additional.map((guest) => ({ id: guest.id, clientKey: guest.clientKey, name: guest.name, attendance: guest.attendance })),
 				invitationAnswers,
 				guestAnswers
 			});
@@ -111,8 +142,8 @@
 
 <svelte:head><title>{household?.event.title ?? 'Your invitation'}</title><meta name="referrer" content="no-referrer" /></svelte:head>
 
-<main class="min-h-screen bg-neutral-50 py-10 px-4">
-	{#if loading}<p class="text-center text-neutral-600">Loading invitation…</p>
+<main class="min-h-screen bg-neutral-50 px-4 py-6 sm:py-10">
+	{#if loading}<p aria-live="polite" class="text-center text-neutral-600">Loading invitation…</p>
 	{:else if !household}<div class="mx-auto max-w-lg rounded-xl bg-white p-8 text-center shadow-sm"><h1 class="text-xl font-semibold">Invitation unavailable</h1><p class="mt-3 text-sm text-neutral-600">{error}</p><a class="mt-4 inline-block text-primary underline" href="/invitation/recovery">Request recovery</a></div>
 	{:else}
 		<form onsubmit={submit} class="mx-auto max-w-3xl space-y-6">
@@ -137,16 +168,16 @@
 				</div>
 			</header>
 
-			{#if error}<div class="rounded-md bg-error-light p-4 text-sm text-error">{error}</div>{/if}
-			{#if deliveryWarning}<div class="rounded-md border border-warning/30 bg-warning-light p-4 text-sm text-warning">{deliveryWarning}</div>{/if}
-			{#if saved}<div class="rounded-md bg-success-light p-4 text-sm text-success">Your response was saved.</div>{/if}
+			{#if error}<div role="alert" class="rounded-md bg-error-light p-4 text-sm text-error">{error}</div>{/if}
+			{#if deliveryWarning}<div role="status" class="rounded-md border border-warning/30 bg-warning-light p-4 text-sm text-warning">{deliveryWarning}</div>{/if}
+			{#if saved}<div role="status" class="rounded-md bg-success-light p-4 text-sm text-success">Your response was saved.</div>{/if}
 
-			<section class="rounded-xl border border-neutral-200 bg-white p-7 shadow-sm space-y-5">
+			<section class="space-y-5 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-7">
 				<h2 class="text-xl font-semibold">Guests</h2>
 				{#each household.guests.filter((guest) => guest.origin === 'assigned') as guest (guest.id)}
 					<div class="grid gap-3 rounded-md border border-neutral-200 p-4 md:grid-cols-[1fr_180px]">
 						<strong>{guest.name}</strong>
-						<select bind:value={attendance[guest.id]} class="rounded-md border border-neutral-300 px-3 py-2">
+						<select aria-label="{guest.name} attendance" bind:value={attendance[guest.id]} class="rounded-md border border-neutral-300 px-3 py-2">
 							{#each attendanceOptions as option}<option value={option.value}>{option.label}</option>{/each}
 						</select>
 					</div>
@@ -155,7 +186,7 @@
 				{#each additional as guest, index (guest.id ?? `new-${index}`)}
 					<div class="grid gap-3 rounded-md border border-neutral-200 p-4 md:grid-cols-[1fr_180px_auto]">
 						<input aria-label="Additional guest name" value={guest.name} oninput={(event) => setAdditionalName(index, event.currentTarget.value)} class="rounded-md border border-neutral-300 px-3 py-2" placeholder="Additional guest name" required />
-						<select value={guest.attendance} onchange={(event) => setAdditionalAttendance(index, event.currentTarget.value as InvitationAttendance)} class="rounded-md border border-neutral-300 px-3 py-2">
+						<select aria-label="{guest.name || `Additional guest ${index + 1}`} attendance" value={guest.attendance} onchange={(event) => setAdditionalAttendance(index, event.currentTarget.value as InvitationAttendance)} class="rounded-md border border-neutral-300 px-3 py-2">
 							{#each attendanceOptions as option}<option value={option.value}>{option.label}</option>{/each}
 						</select>
 						<button type="button" onclick={() => removeGuest(index)} class="text-sm text-error">Remove</button>
@@ -165,25 +196,29 @@
 			</section>
 
 			{#if household.questions.length > 0}
-				<section class="rounded-xl border border-neutral-200 bg-white p-7 shadow-sm space-y-6">
+				<section class="space-y-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-7">
 					<h2 class="text-xl font-semibold">Questions</h2>
 					{#each household.questions.filter((question) => question.scope === 'invitation') as question (question.id)}
-						<label class="block space-y-2"><span class="text-sm font-medium">{question.label}{question.required ? ' *' : ''}</span>
+						{#if question.type === 'checkbox'}
+							<fieldset class="space-y-2"><legend class="text-sm font-medium">{question.label}{question.required ? ' *' : ''}</legend>{#each question.options as option}<label class="flex items-start gap-2 text-sm"><input type="checkbox" checked={selectedOptions(question).includes(option)} onchange={(event) => toggleOption(question, option, event.currentTarget.checked)} class="mt-0.5" /><span>{option}</span></label>{/each}</fieldset>
+						{:else}<label class="block space-y-2"><span class="text-sm font-medium">{question.label}{question.required ? ' *' : ''}</span>
 							{#if question.type === 'select'}<select value={invitationAnswers[question.id] ?? ''} onchange={(event) => answerQuestion(question, event.currentTarget.value)} required={question.required} class="block w-full rounded-md border border-neutral-300 px-3 py-2"><option value="">Select…</option>{#each question.options as option}<option value={option}>{option}</option>{/each}</select>
 							{:else}<input value={invitationAnswers[question.id] ?? ''} oninput={(event) => answerQuestion(question, event.currentTarget.value)} required={question.required} class="block w-full rounded-md border border-neutral-300 px-3 py-2" />{/if}
-						</label>
+						</label>{/if}
 					{/each}
-					{#each household.guests.filter((guest) => attendance[guest.id] === 'attending') as guest (guest.id)}
+					{#each attendingQuestionGuests() as guest (guest.key)}
 						{#each household.questions.filter((question) => question.scope === 'guest') as question (question.id)}
-							<label class="block space-y-2"><span class="text-sm font-medium">{guest.name}: {question.label}{question.required ? ' *' : ''}</span>
-								{#if question.type === 'select'}<select value={guestAnswers[guest.id]?.[question.id] ?? ''} onchange={(event) => answerQuestion(question, event.currentTarget.value, guest.id)} required={question.required} class="block w-full rounded-md border border-neutral-300 px-3 py-2"><option value="">Select…</option>{#each question.options as option}<option value={option}>{option}</option>{/each}</select>
-								{:else}<input value={guestAnswers[guest.id]?.[question.id] ?? ''} oninput={(event) => answerQuestion(question, event.currentTarget.value, guest.id)} required={question.required} class="block w-full rounded-md border border-neutral-300 px-3 py-2" />{/if}
-							</label>
+							{#if question.type === 'checkbox'}
+								<fieldset class="space-y-2"><legend class="text-sm font-medium">{guest.name}: {question.label}{question.required ? ' *' : ''}</legend>{#each question.options as option}<label class="flex items-start gap-2 text-sm"><input type="checkbox" checked={selectedOptions(question, guest.key).includes(option)} onchange={(event) => toggleOption(question, option, event.currentTarget.checked, guest.key)} class="mt-0.5" /><span>{option}</span></label>{/each}</fieldset>
+							{:else}<label class="block space-y-2"><span class="text-sm font-medium">{guest.name}: {question.label}{question.required ? ' *' : ''}</span>
+								{#if question.type === 'select'}<select value={guestAnswers[guest.key]?.[question.id] ?? ''} onchange={(event) => answerQuestion(question, event.currentTarget.value, guest.key)} required={question.required} class="block w-full rounded-md border border-neutral-300 px-3 py-2"><option value="">Select…</option>{#each question.options as option}<option value={option}>{option}</option>{/each}</select>
+								{:else}<input value={guestAnswers[guest.key]?.[question.id] ?? ''} oninput={(event) => answerQuestion(question, event.currentTarget.value, guest.key)} required={question.required} class="block w-full rounded-md border border-neutral-300 px-3 py-2" />{/if}
+							</label>{/if}
 						{/each}
 					{/each}
 				</section>
 			{/if}
-			<Button type="submit" size="lg" loading={saving}>Save response</Button>
+			<Button type="submit" size="lg" loading={saving} class="w-full sm:w-auto">Save response</Button>
 		</form>
 	{/if}
 </main>

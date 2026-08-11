@@ -296,10 +296,30 @@
         "required": ["version", "assignedGuests", "additionalGuests", "invitationAnswers", "guestAnswers"],
         "properties": {
           "version": { "type": "integer", "minimum": 1 },
-          "assignedGuests": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-          "additionalGuests": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "assignedGuests": { "type": "array", "items": { "$ref": "#/components/schemas/AssignedGuestAttendanceInput" } },
+          "additionalGuests": { "type": "array", "items": { "$ref": "#/components/schemas/AdditionalGuestResponseInput" } },
           "invitationAnswers": { "type": "object", "additionalProperties": true },
           "guestAnswers": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "AssignedGuestAttendanceInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["guestId", "attendance"],
+        "properties": {
+          "guestId": { "type": "string", "format": "uuid" },
+          "attendance": { "type": "string", "enum": ["pending", "attending", "maybe", "declined"] }
+        }
+      },
+      "AdditionalGuestResponseInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "attendance"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Persisted additional guest ID when updating an existing guest." },
+          "clientKey": { "type": "string", "maxLength": 100, "description": "Non-persisted correlation key for answers belonging to a new guest in this atomic submission." },
+          "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "attendance": { "type": "string", "enum": ["pending", "attending", "maybe", "declined"] }
         }
       },
       "RecoveryRequest": {

@@ -174,7 +174,10 @@ type DeliveryResult struct {
 }
 
 type AdditionalGuestInput struct {
-	ID         string `json:"id,omitempty"`
+	ID string `json:"id,omitempty"`
+	// ClientKey correlates answers for a not-yet-persisted additional guest
+	// during one atomic submission. It is validated, consumed, and never stored.
+	ClientKey  string `json:"clientKey,omitempty"`
 	Name       string `json:"name"`
 	Attendance string `json:"attendance"`
 }

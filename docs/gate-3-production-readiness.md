@@ -39,6 +39,10 @@ Operator procedures are split by task:
 - Production runtime is UID/GID 10001, capability-free, no-new-privileges,
   read-only except `/data` and bounded `/tmp`, with no published host port in
   the production Compose example.
+- The architecture-independent frontend is compiled once on BuildKit's
+  `$BUILDPLATFORM`; target-platform stages retain native CGO compilation. CI
+  loads both amd64 and arm64 images and proves each serves the embedded
+  frontend and reports the exact expected build identity.
 
 ## Schema and migration policy
 

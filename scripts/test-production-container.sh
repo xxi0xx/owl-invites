@@ -3,6 +3,7 @@ set -euo pipefail
 
 : "${IMAGE:?IMAGE is required}"
 : "${EXPECTED_COMMIT:?EXPECTED_COMMIT is required}"
+: "${EXPECTED_ARCH:?EXPECTED_ARCH is required}"
 
 suffix=${GITHUB_RUN_ID:-local}-$$
 container=owl-invites-gate3-$suffix
@@ -64,6 +65,9 @@ done
 jq -e '.status == "ok" and .database == "connected"' "$work/readiness.json" >/dev/null
 docker exec "$container" wget -qO- http://127.0.0.1:8080/health > "$work/liveness.json"
 jq -e --arg commit "$EXPECTED_COMMIT" '.status == "ok" and .commit == $commit' "$work/liveness.json" >/dev/null
+docker exec "$container" wget -qO- http://127.0.0.1:8080/setup > "$work/frontend.html"
+grep -Fqi '<!doctype html>' "$work/frontend.html"
+grep -Fq '/_app/immutable/' "$work/frontend.html"
 
 docker inspect "$container" > "$work/inspect.json"
 jq -e '.[0].Config.User == "10001:10001"' "$work/inspect.json" >/dev/null
@@ -88,6 +92,7 @@ docker exec "$container" owl-invites version --json > "$work/version.json"
 jq -e --arg commit "$EXPECTED_COMMIT" '.version == "ci" and .commit == $commit and .buildState == "clean"' "$work/version.json" >/dev/null
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$EXPECTED_COMMIT"
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$IMAGE")" = ci
+test "$(docker image inspect --format '{{.Architecture}}' "$IMAGE")" = "$EXPECTED_ARCH"
 
 if docker logs "$container" 2>&1 | grep -Fq "$secret"; then
   echo "container logs leaked OWL_INVITES_SECRET_KEY" >&2

@@ -1,12 +1,14 @@
-# Stage 1: Build frontend
-FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS frontend
+# Stage 1: Build architecture-independent frontend assets once on the native
+# builder. The resulting static files are copied into every target backend.
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS frontend
 WORKDIR /app/web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-# Stage 2: Build Go binary
+# Stage 2: Build Go binaries on the target platform. CGO remains native to
+# linux/amd64 or linux/arm64 (under QEMU when the builder is not that target).
 # Use Go 1.26 (or newer) to pick up patched std-lib (html/template XSS
 # escaper bypass, net/mail quadratic concat, net/http2 frame infinite loop).
 # go.mod's go directive expresses minimum source compatibility, not the

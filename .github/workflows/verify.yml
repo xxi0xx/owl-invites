@@ -259,6 +259,7 @@ jobs:
     needs: [release-policy, frontend, backend-sqlite, backend-postgres, postgres-restore, e2e, lint, govulncheck]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Build both release architectures
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -274,12 +275,13 @@ jobs:
           provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      - name: Load amd64 acceptance image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           push: false
           load: true
-          tags: owl-invites:gate3
+          tags: owl-invites:gate3-amd64
           platforms: linux/amd64
           build-args: |
             VERSION=ci
@@ -288,9 +290,30 @@ jobs:
             SOURCE_URL=https://github.com/${{ github.repository }}
           provenance: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Verify production runtime hardening and SIGTERM
+      - name: Load arm64 acceptance image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: owl-invites:gate3-arm64
+          platforms: linux/arm64
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+            BUILD_STATE=clean
+            SOURCE_URL=https://github.com/${{ github.repository }}
+          provenance: false
+          cache-from: type=gha
+      - name: Verify amd64 frontend, identity, hardening, and SIGTERM
         env:
-          IMAGE: owl-invites:gate3
+          IMAGE: owl-invites:gate3-amd64
           EXPECTED_COMMIT: ${{ github.sha }}
+          EXPECTED_ARCH: amd64
+        run: bash scripts/test-production-container.sh
+      - name: Verify arm64 frontend, identity, hardening, and SIGTERM
+        env:
+          IMAGE: owl-invites:gate3-arm64
+          EXPECTED_COMMIT: ${{ github.sha }}
+          EXPECTED_ARCH: arm64
         run: bash scripts/test-production-container.sh

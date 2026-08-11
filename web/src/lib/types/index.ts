@@ -150,6 +150,14 @@ export interface InvitationHousehold {
 		font: string;
 		backgroundImage?: string;
 	};
+	latestDelivery?: {
+		status: 'pending' | 'sent' | 'failed';
+		deliveryStatus: 'unknown' | 'delivered' | 'opened' | 'clicked' | 'bounced' | 'complained';
+		provider: string;
+		error?: string;
+		attemptedAt: string;
+		sentAt?: string;
+	};
 }
 
 export interface InvitationImportIssue {

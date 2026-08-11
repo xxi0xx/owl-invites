@@ -52,6 +52,7 @@ func (h *Handler) OrganizerInvitationRoutes() chi.Router {
 	r.Post("/import/commit", h.commitImport)
 	r.Get("/export", h.exportCSV)
 	r.Get("/{invitationId}", h.get)
+	r.Put("/{invitationId}", h.update)
 	r.Post("/{invitationId}/deliver", h.deliver)
 	r.Post("/{invitationId}/rotate", h.rotate)
 	r.Post("/{invitationId}/revoke", h.revoke)
@@ -193,9 +194,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
 	}
-	items, err := h.service.store.ListByEvent(r.Context(), eventID)
-	if err != nil {
-		h.internal(w, err, "list invitations")
+	items, err := h.service.ListOrganizerHouseholds(r.Context(), eventID, InvitationListFilter{
+		Search: r.URL.Query().Get("search"), Response: r.URL.Query().Get("response"),
+		Attendance: r.URL.Query().Get("attendance"),
+	})
+	if h.writeServiceError(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": items})
@@ -235,9 +238,28 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "invitation not found")
 		return
 	}
-	household, err := h.service.store.LoadHousehold(r.Context(), inv.ID)
+	household, err := h.service.store.LoadOrganizerHousehold(r.Context(), inv.ID)
 	if err != nil {
 		h.internal(w, err, "load invitation")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": household})
+}
+
+func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+	eventID, _, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req UpdateInvitationRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	household, err := h.service.UpdateInvitation(r.Context(), eventID,
+		chi.URLParam(r, "invitationId"), req)
+	if h.writeServiceError(w, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": household})

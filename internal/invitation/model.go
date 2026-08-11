@@ -121,6 +121,7 @@ type Household struct {
 	InvitationAnswers []Answer           `json:"invitationAnswers"`
 	GuestAnswers      []GuestAnswer      `json:"guestAnswers"`
 	Presentation      *GuestPresentation `json:"presentation"`
+	LatestDelivery    *DeliverySummary   `json:"latestDelivery,omitempty"`
 }
 
 type CreateRequest struct {
@@ -131,6 +132,29 @@ type CreateRequest struct {
 	AdditionalGuestAllowance int      `json:"additionalGuestAllowance"`
 	AssignedGuestNames       []string `json:"assignedGuestNames"`
 	Send                     bool     `json:"send"`
+}
+
+type AssignedGuestEdit struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name"`
+}
+
+type UpdateInvitationRequest struct {
+	Label                    string              `json:"label"`
+	ContactEmail             *string             `json:"contactEmail,omitempty"`
+	ContactPhone             *string             `json:"contactPhone,omitempty"`
+	PreferredDeliveryMethod  string              `json:"preferredDeliveryMethod"`
+	AdditionalGuestAllowance int                 `json:"additionalGuestAllowance"`
+	AssignedGuests           []AssignedGuestEdit `json:"assignedGuests"`
+}
+
+type DeliverySummary struct {
+	Status         string     `json:"status"`
+	DeliveryStatus string     `json:"deliveryStatus"`
+	Provider       string     `json:"provider"`
+	Error          string     `json:"error,omitempty"`
+	AttemptedAt    time.Time  `json:"attemptedAt"`
+	SentAt         *time.Time `json:"sentAt,omitempty"`
 }
 
 type CreateResult struct {

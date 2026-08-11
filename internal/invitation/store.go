@@ -212,7 +212,7 @@ func (s *Store) ListByEvent(ctx context.Context, eventID string) ([]*Household, 
 	// configurations may intentionally use a single connection.
 	result := make([]*Household, 0, len(invitations))
 	for _, inv := range invitations {
-		household, loadErr := s.LoadHousehold(ctx, inv.ID)
+		household, loadErr := s.LoadOrganizerHousehold(ctx, inv.ID)
 		if loadErr != nil {
 			return nil, loadErr
 		}

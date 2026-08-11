@@ -151,6 +151,15 @@ export type GuestInvitationPresentation = {
 	"backgroundImage"?: string;
 };
 
+export type InvitationDeliverySummary = {
+	"status": "pending" | "sent" | "failed";
+	"deliveryStatus": "unknown" | "delivered" | "opened" | "clicked" | "bounced" | "complained";
+	"provider": string;
+	"error"?: string;
+	"attemptedAt": string;
+	"sentAt"?: string;
+};
+
 export type InvitationHousehold = {
 	"invitation": Invitation;
 	"event": Record<string, unknown>;
@@ -160,6 +169,7 @@ export type InvitationHousehold = {
 	"invitationAnswers": Array<Record<string, unknown>>;
 	"guestAnswers": Array<Record<string, unknown>>;
 	"presentation": GuestInvitationPresentation;
+	"latestDelivery"?: InvitationDeliverySummary;
 };
 
 export type CreateInvitationRequest = {
@@ -170,6 +180,18 @@ export type CreateInvitationRequest = {
 	"additionalGuestAllowance": number;
 	"assignedGuestNames": Array<string>;
 	"send"?: boolean;
+};
+
+export type UpdateInvitationRequest = {
+	"label": string;
+	"contactEmail"?: string;
+	"contactPhone"?: string;
+	"preferredDeliveryMethod": "email" | "sms" | "none";
+	"additionalGuestAllowance": number;
+	"assignedGuests": Array<{
+		"id"?: string;
+		"name": string;
+	}>;
 };
 
 export type InvitationDeliveryResult = {
@@ -471,6 +493,9 @@ export interface Operations {
 	listInvitations: {
 		parameters: {
 	"eventId": string;
+	"search"?: string;
+	"response"?: "submitted" | "not_submitted";
+	"attendance"?: "pending" | "attending" | "maybe" | "declined";
 };
 		requestBody: void;
 		response: {
@@ -524,6 +549,16 @@ export interface Operations {
 	"invitationId": string;
 };
 		requestBody: void;
+		response: {
+	"data": InvitationHousehold;
+};
+	};
+	updateInvitationHousehold: {
+		parameters: {
+	"eventId": string;
+	"invitationId": string;
+};
+		requestBody: UpdateInvitationRequest;
 		response: {
 	"data": InvitationHousehold;
 };
@@ -656,13 +691,14 @@ export const operationDefinitions = {
 	listEvents: {"method":"GET","path":"/events","pathParams":[],"queryParams":[]},
 	listEventCohosts: {"method":"GET","path":"/events/{eventId}/cohosts","pathParams":["eventId"],"queryParams":[]},
 	inviteEventCohost: {"method":"POST","path":"/events/{eventId}/cohosts","pathParams":["eventId"],"queryParams":[]},
-	listInvitations: {"method":"GET","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
+	listInvitations: {"method":"GET","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":["search","response","attendance"]},
 	createInvitation: {"method":"POST","path":"/events/{eventId}/invitations","pathParams":["eventId"],"queryParams":[]},
 	downloadInvitationImportTemplate: {"method":"GET","path":"/events/{eventId}/invitations/import/template","pathParams":["eventId"],"queryParams":[]},
 	previewInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/preview","pathParams":["eventId"],"queryParams":[]},
 	commitInvitationImport: {"method":"POST","path":"/events/{eventId}/invitations/import/commit","pathParams":["eventId"],"queryParams":[]},
 	exportInvitationResponses: {"method":"GET","path":"/events/{eventId}/invitations/export","pathParams":["eventId"],"queryParams":[]},
 	getInvitation: {"method":"GET","path":"/events/{eventId}/invitations/{invitationId}","pathParams":["eventId","invitationId"],"queryParams":[]},
+	updateInvitationHousehold: {"method":"PUT","path":"/events/{eventId}/invitations/{invitationId}","pathParams":["eventId","invitationId"],"queryParams":[]},
 	deliverInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/deliver","pathParams":["eventId","invitationId"],"queryParams":[]},
 	rotateInvitationCapability: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/rotate","pathParams":["eventId","invitationId"],"queryParams":[]},
 	revokeInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/revoke","pathParams":["eventId","invitationId"],"queryParams":[]},

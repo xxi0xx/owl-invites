@@ -206,6 +206,18 @@
           "backgroundImage": { "type": "string", "description": "Revalidated public upload or HTTPS image URL. Storage paths and arbitrary invite custom data are never exposed." }
         }
       },
+      "InvitationDeliverySummary": {
+        "type": "object",
+        "required": ["status", "deliveryStatus", "provider", "attemptedAt"],
+        "properties": {
+          "status": { "type": "string", "enum": ["pending", "sent", "failed"] },
+          "deliveryStatus": { "type": "string", "enum": ["unknown", "delivered", "opened", "clicked", "bounced", "complained"] },
+          "provider": { "type": "string" },
+          "error": { "type": "string" },
+          "attemptedAt": { "type": "string", "format": "date-time" },
+          "sentAt": { "type": "string", "format": "date-time" }
+        }
+      },
       "InvitationHousehold": {
         "type": "object",
         "required": ["invitation", "event", "response", "guests", "questions", "invitationAnswers", "guestAnswers", "presentation"],
@@ -217,7 +229,8 @@
           "questions": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationQuestion" } },
           "invitationAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
           "guestAnswers": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-          "presentation": { "$ref": "#/components/schemas/GuestInvitationPresentation" }
+          "presentation": { "$ref": "#/components/schemas/GuestInvitationPresentation" },
+          "latestDelivery": { "$ref": "#/components/schemas/InvitationDeliverySummary", "description": "Organizer-only latest email attempt. Omitted from guest household-session responses." }
         }
       },
       "CreateInvitationRequest": {
@@ -232,6 +245,25 @@
           "additionalGuestAllowance": { "type": "integer", "minimum": 0, "maximum": 50 },
           "assignedGuestNames": { "type": "array", "minItems": 1, "items": { "type": "string" } },
           "send": { "type": "boolean", "description": "When true, preferredDeliveryMethod must be email and contactEmail must be valid. Creation remains successful if the post-commit email attempt later fails." }
+        }
+      },
+      "UpdateInvitationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "preferredDeliveryMethod", "additionalGuestAllowance", "assignedGuests"],
+        "properties": {
+          "label": { "type": "string", "maxLength": 200 },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" },
+          "preferredDeliveryMethod": { "type": "string", "enum": ["email", "sms", "none"] },
+          "additionalGuestAllowance": { "type": "integer", "minimum": 0, "maximum": 50 },
+          "assignedGuests": {
+            "type": "array", "minItems": 1, "maxItems": 100,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["name"],
+              "properties": { "id": { "type": "string", "format": "uuid" }, "name": { "type": "string", "maxLength": 200 } }
+            }
+          }
         }
       },
       "InvitationDeliveryResult": {
@@ -570,6 +602,11 @@
       "get": {
         "operationId": "listInvitations",
         "security": [{ "sessionCookie": [] }],
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string", "maxLength": 200 }, "description": "Authorized search across household label, stored contact, and active guest names." },
+          { "name": "response", "in": "query", "schema": { "type": "string", "enum": ["submitted", "not_submitted"] } },
+          { "name": "attendance", "in": "query", "schema": { "type": "string", "enum": ["pending", "attending", "maybe", "declined"] } }
+        ],
         "responses": { "200": { "description": "Invitation households for the event", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } } }
       },
       "post": {
@@ -622,6 +659,12 @@
         "operationId": "getInvitation",
         "security": [{ "sessionCookie": [] }],
         "responses": { "200": { "description": "Invitation household", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } }
+      },
+      "put": {
+        "operationId": "updateInvitationHousehold",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateInvitationRequest" } } } },
+        "responses": { "200": { "description": "Household metadata and assigned guest definition updated without delivery or capability rotation", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationHousehold" } } } } } } }
       }
     },
     "/events/{eventId}/invitations/{invitationId}/deliver": {

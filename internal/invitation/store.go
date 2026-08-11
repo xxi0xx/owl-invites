@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("invitation not found")
-	ErrConflict  = errors.New("response version conflict")
-	ErrAllowance = errors.New("additional guest allowance exceeded")
-	ErrCapacity  = errors.New("open enrollment capacity exceeded")
+	ErrNotFound           = errors.New("invitation not found")
+	ErrConflict           = errors.New("response version conflict")
+	ErrAllowance          = errors.New("additional guest allowance exceeded")
+	ErrCapacity           = errors.New("open enrollment capacity exceeded")
+	ErrDeliverySuppressed = errors.New("invitation delivery suppressed")
 )
 
 type Store struct {
@@ -223,7 +224,8 @@ func (s *Store) ListByEvent(ctx context.Context, eventID string) ([]*Household, 
 
 func (s *Store) ListDeliveryTargets(ctx context.Context, eventID, recipientGroup string) ([]*Invitation, error) {
 	query := `SELECT ` + invitationColumns + ` FROM invitations i
-		WHERE i.event_id = ? AND i.revoked_at IS NULL AND i.contact_email IS NOT NULL`
+		WHERE i.event_id = ? AND i.revoked_at IS NULL AND i.contact_email IS NOT NULL
+		AND i.preferred_delivery_method = 'email'`
 	args := []any{eventID}
 	if recipientGroup != "all" {
 		query += ` AND EXISTS (SELECT 1 FROM guests g

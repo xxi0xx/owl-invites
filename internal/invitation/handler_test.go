@@ -159,6 +159,39 @@ func TestOrganizerImportPreviewCommitAndPublicIsolation(t *testing.T) {
 		"public invitation routes must never expose organizer household editing")
 }
 
+func TestOrganizerMessagePreviewAndAggregateDeliveryResult(t *testing.T) {
+	f, organizer, _ := organizerHandlerFixture(t)
+	f.create("First", "first@example.com", 0, "First")
+	f.create("Second", "second@example.com", 0, "Second")
+	f.service.SetEmailSender(func(_ context.Context, _, _, to, _, _, _ string) error {
+		if to == "second@example.com" {
+			return errors.New("deliberate delivery failure")
+		}
+		return nil
+	})
+	preview := requestJSON(t, organizer, http.MethodPost,
+		"/events/"+f.eventID+"/invitations/messages/preview",
+		MessagePreviewRequest{RecipientGroup: "all"}, nil)
+	require.Equal(t, http.StatusOK, preview.Code, preview.Body.String())
+	assert.Contains(t, preview.Body.String(), `"recipientHouseholds":2`)
+	assert.NotContains(t, preview.Body.String(), "first@example.com")
+	assert.NotContains(t, preview.Body.String(), "second@example.com")
+
+	result := requestJSON(t, organizer, http.MethodPost,
+		"/events/"+f.eventID+"/invitations/messages",
+		MessageRequest{RecipientGroup: "all", Subject: "Update", Body: "Details"}, nil)
+	require.Equal(t, http.StatusCreated, result.Code, result.Body.String())
+	assert.Contains(t, result.Body.String(), `"attempted":2`)
+	assert.Contains(t, result.Body.String(), `"accepted":1`)
+	assert.Contains(t, result.Body.String(), `"failed":1`)
+	assert.NotContains(t, result.Body.String(), "second@example.com")
+
+	_, public, _ := publicHandlerFixture(t)
+	publicPreview := requestJSON(t, public, http.MethodPost, "/invitations/messages/preview",
+		MessagePreviewRequest{RecipientGroup: "all"}, nil)
+	assert.Equal(t, http.StatusNotFound, publicPreview.Code)
+}
+
 func TestCapabilityExchangeDoesNotLeakCapabilityAndSetsScopedCookie(t *testing.T) {
 	f, handler, logs := publicHandlerFixture(t)
 	created := f.create("Household", "household@example.com", 0, "Guest")

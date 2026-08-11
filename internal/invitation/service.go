@@ -2,6 +2,7 @@ package invitation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"net/mail"
@@ -132,48 +133,88 @@ func (s *Service) attemptDelivery(ctx context.Context, invitationID, warning str
 }
 
 func (s *Service) Broadcast(ctx context.Context, eventID string, senderUserID *string, req MessageRequest) (int, error) {
+	result, err := s.BroadcastDetailed(ctx, eventID, senderUserID, req)
+	if err != nil {
+		return 0, err
+	}
+	if result.Failed > 0 {
+		return result.Accepted, fmt.Errorf("%d invitation deliveries failed", result.Failed)
+	}
+	return result.Accepted, nil
+}
+
+func (s *Service) PreviewBroadcast(ctx context.Context, eventID string, req MessagePreviewRequest) (*MessagePreview, error) {
+	group, err := validateRecipientGroup(req.RecipientGroup)
+	if err != nil {
+		return nil, err
+	}
+	targets, err := s.store.ListDeliveryTargets(ctx, eventID, group)
+	if err != nil {
+		return nil, err
+	}
+	return &MessagePreview{RecipientGroup: group, RecipientHouseholds: len(targets)}, nil
+}
+
+func (s *Service) BroadcastDetailed(ctx context.Context, eventID string, senderUserID *string, req MessageRequest) (*MessageResult, error) {
 	req.RecipientGroup = strings.TrimSpace(req.RecipientGroup)
-	if req.RecipientGroup == "" {
-		req.RecipientGroup = "all"
+	group, err := validateRecipientGroup(req.RecipientGroup)
+	if err != nil {
+		return nil, err
 	}
-	if !validAttendance(req.RecipientGroup) && req.RecipientGroup != "all" {
-		return 0, errcode.Validationf("invalid recipient group")
-	}
+	req.RecipientGroup = group
 	req.Subject = strings.TrimSpace(req.Subject)
 	req.Body = strings.TrimSpace(req.Body)
 	if req.Subject == "" || len(req.Subject) > 200 {
-		return 0, errcode.Validationf("subject is required and must be 200 characters or fewer")
+		return nil, errcode.Validationf("subject is required and must be 200 characters or fewer")
 	}
 	if req.Body == "" || len(req.Body) > 10000 {
-		return 0, errcode.Validationf("body is required and must be 10000 characters or fewer")
+		return nil, errcode.Validationf("body is required and must be 10000 characters or fewer")
 	}
 	if s.sendEmail == nil {
-		return 0, fmt.Errorf("invitation email delivery is not configured")
+		return nil, fmt.Errorf("invitation email delivery is not configured")
 	}
 	targets, err := s.store.ListDeliveryTargets(ctx, eventID, req.RecipientGroup)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	message := &InvitationMessage{EventID: eventID, SenderUserID: senderUserID,
 		RecipientGroup: req.RecipientGroup, Subject: req.Subject, Body: req.Body}
 	if err := s.store.CreateMessage(ctx, message); err != nil {
-		return 0, err
+		return nil, err
 	}
-	sent := 0
+	result := &MessageResult{}
 	for _, inv := range targets {
 		if inv.PreferredDeliveryMethod != "email" || inv.ContactEmail == nil {
+			result.Skipped++
 			continue
 		}
+		result.Attempted++
 		url := s.privateAccessURL(inv)
 		plain := req.Body + "\n\nManage your private invitation:\n" + url
 		htmlBody := fmt.Sprintf(`<p>%s</p><p><a href="%s">Manage your private invitation</a></p>`,
 			html.EscapeString(req.Body), html.EscapeString(url))
 		if err := s.sendEmail(ctx, eventID, inv.ID, *inv.ContactEmail, req.Subject, htmlBody, plain); err != nil {
-			return sent, err
+			if errors.Is(err, ErrDeliverySuppressed) {
+				result.Skipped++
+				continue
+			}
+			result.Failed++
+			continue
 		}
-		sent++
+		result.Accepted++
 	}
-	return sent, nil
+	return result, nil
+}
+
+func validateRecipientGroup(raw string) (string, error) {
+	group := strings.TrimSpace(raw)
+	if group == "" {
+		group = "all"
+	}
+	if !validAttendance(group) && group != "all" {
+		return "", errcode.Validationf("invalid recipient group")
+	}
+	return group, nil
 }
 
 func (s *Service) Rotate(ctx context.Context, eventID, invitationID string) (*CreateResult, error) {

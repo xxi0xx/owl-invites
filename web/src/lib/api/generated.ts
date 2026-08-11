@@ -257,7 +257,19 @@ export type InvitationMessageRequest = {
 };
 
 export type InvitationMessageResult = {
-	"sent": number;
+	"attempted": number;
+	"accepted": number;
+	"failed": number;
+	"skipped": number;
+};
+
+export type InvitationMessagePreviewRequest = {
+	"recipientGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+};
+
+export type InvitationMessagePreview = {
+	"recipientGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"recipientHouseholds": number;
 };
 
 export type InvitationImportIssue = {
@@ -292,6 +304,29 @@ export type InvitationImportCommitResult = {
 	"householdCount": number;
 	"assignedGuestCount": number;
 	"invitationIds": Array<string>;
+};
+
+export type Reminder = {
+	"id": string;
+	"eventId": string;
+	"remindAt": string;
+	"targetGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"message": string;
+	"status": "scheduled" | "processing" | "sent" | "cancelled" | "failed";
+	"createdAt": string;
+	"updatedAt": string;
+};
+
+export type CreateReminderRequest = {
+	"remindAt": string;
+	"targetGroup": "all" | "attending" | "maybe" | "declined" | "pending";
+	"message": string;
+};
+
+export type UpdateReminderRequest = {
+	"remindAt"?: string;
+	"targetGroup"?: "all" | "attending" | "maybe" | "declined" | "pending";
+	"message"?: string;
 };
 
 export type OpenEnrollmentRequest = {
@@ -600,6 +635,49 @@ export interface Operations {
 	"data": InvitationMessageResult;
 };
 	};
+	previewInvitationHouseholdMessage: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: InvitationMessagePreviewRequest;
+		response: {
+	"data": InvitationMessagePreview;
+};
+	};
+	listEventReminders: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: void;
+		response: {
+	"data": Array<Reminder>;
+};
+	};
+	createEventReminder: {
+		parameters: {
+	"eventId": string;
+};
+		requestBody: CreateReminderRequest;
+		response: {
+	"data": Reminder;
+};
+	};
+	updateEventReminder: {
+		parameters: {
+	"reminderId": string;
+};
+		requestBody: UpdateReminderRequest;
+		response: {
+	"data": Reminder;
+};
+	};
+	cancelEventReminder: {
+		parameters: {
+	"reminderId": string;
+};
+		requestBody: void;
+		response: Record<string, unknown>;
+	};
 	getOpenEnrollment: {
 		parameters: {
 	"eventId": string;
@@ -703,6 +781,11 @@ export const operationDefinitions = {
 	rotateInvitationCapability: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/rotate","pathParams":["eventId","invitationId"],"queryParams":[]},
 	revokeInvitation: {"method":"POST","path":"/events/{eventId}/invitations/{invitationId}/revoke","pathParams":["eventId","invitationId"],"queryParams":[]},
 	messageInvitationHouseholds: {"method":"POST","path":"/events/{eventId}/invitations/messages","pathParams":["eventId"],"queryParams":[]},
+	previewInvitationHouseholdMessage: {"method":"POST","path":"/events/{eventId}/invitations/messages/preview","pathParams":["eventId"],"queryParams":[]},
+	listEventReminders: {"method":"GET","path":"/reminders/event/{eventId}","pathParams":["eventId"],"queryParams":[]},
+	createEventReminder: {"method":"POST","path":"/reminders/event/{eventId}","pathParams":["eventId"],"queryParams":[]},
+	updateEventReminder: {"method":"PUT","path":"/reminders/{reminderId}","pathParams":["reminderId"],"queryParams":[]},
+	cancelEventReminder: {"method":"DELETE","path":"/reminders/{reminderId}","pathParams":["reminderId"],"queryParams":[]},
 	getOpenEnrollment: {"method":"GET","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
 	configureOpenEnrollment: {"method":"PUT","path":"/events/{eventId}/open-enrollment","pathParams":["eventId"],"queryParams":[]},
 	rotateOpenEnrollmentCapability: {"method":"POST","path":"/events/{eventId}/open-enrollment/rotate","pathParams":["eventId"],"queryParams":[]},

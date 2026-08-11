@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -118,6 +119,11 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "targetGroup must be one of: all, attending, maybe, declined, pending")
 		return
 	}
+	req.Message = strings.TrimSpace(req.Message)
+	if len(req.Message) > 10000 {
+		writeError(w, http.StatusBadRequest, "bad_request", "message must be 10000 characters or fewer")
+		return
+	}
 
 	reminder := &Reminder{
 		ID:          uuid.Must(uuid.NewV7()).String(),
@@ -229,7 +235,12 @@ func (h *Handler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Message != nil {
-		reminder.Message = *req.Message
+		value := strings.TrimSpace(*req.Message)
+		if len(value) > 10000 {
+			writeError(w, http.StatusBadRequest, "bad_request", "message must be 10000 characters or fewer")
+			return
+		}
+		reminder.Message = value
 	}
 
 	if err := h.store.Update(r.Context(), reminder); err != nil {

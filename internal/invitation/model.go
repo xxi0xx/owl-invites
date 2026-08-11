@@ -235,6 +235,22 @@ type MessageRequest struct {
 	Body           string `json:"body"`
 }
 
+type MessagePreviewRequest struct {
+	RecipientGroup string `json:"recipientGroup"`
+}
+
+type MessagePreview struct {
+	RecipientGroup      string `json:"recipientGroup"`
+	RecipientHouseholds int    `json:"recipientHouseholds"`
+}
+
+type MessageResult struct {
+	Attempted int `json:"attempted"`
+	Accepted  int `json:"accepted"`
+	Failed    int `json:"failed"`
+	Skipped   int `json:"skipped"`
+}
+
 type InvitationMessage struct {
 	ID             string    `json:"id"`
 	EventID        string    `json:"eventId"`

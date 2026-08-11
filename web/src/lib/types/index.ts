@@ -46,7 +46,7 @@ export interface Reminder {
 	remindAt: string;
 	targetGroup: 'all' | 'attending' | 'maybe' | 'declined' | 'pending';
 	message: string;
-	status: 'scheduled' | 'sent' | 'cancelled' | 'failed';
+	status: 'scheduled' | 'processing' | 'sent' | 'cancelled' | 'failed';
 	createdAt: string;
 	updatedAt: string;
 }

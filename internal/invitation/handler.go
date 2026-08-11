@@ -56,6 +56,7 @@ func (h *Handler) OrganizerInvitationRoutes() chi.Router {
 	r.Post("/{invitationId}/deliver", h.deliver)
 	r.Post("/{invitationId}/rotate", h.rotate)
 	r.Post("/{invitationId}/revoke", h.revoke)
+	r.Post("/messages/preview", h.previewMessage)
 	r.Post("/messages", h.message)
 	return r
 }
@@ -154,11 +155,29 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
-	sent, err := h.service.Broadcast(r.Context(), eventID, &userID, req)
+	result, err := h.service.BroadcastDetailed(r.Context(), eventID, &userID, req)
 	if h.writeServiceError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]int{"sent": sent}})
+	writeJSON(w, http.StatusCreated, map[string]any{"data": result})
+}
+
+func (h *Handler) previewMessage(w http.ResponseWriter, r *http.Request) {
+	eventID, _, ok := h.eventActor(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		return
+	}
+	var req MessagePreviewRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	preview, err := h.service.PreviewBroadcast(r.Context(), eventID, req)
+	if h.writeServiceError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": preview})
 }
 
 // PublicRoutes is mounted below /api/v1/invitations. Mutation routes that
@@ -529,6 +548,8 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusConflict, "allowance_exceeded", "additional guest allowance exceeded")
 	case errors.Is(err, ErrCapacity):
 		writeError(w, http.StatusConflict, "capacity_reached", "open invitation capacity reached")
+	case errors.Is(err, ErrDeliverySuppressed):
+		writeError(w, http.StatusConflict, "delivery_suppressed", "the stored email destination is suppressed; update the destination or suppression settings before retrying")
 	case errors.Is(err, ErrInvalidCapability):
 		writeError(w, http.StatusUnauthorized, "invalid_capability", "invalid or expired invitation")
 	case errors.Is(err, ErrNotFound):

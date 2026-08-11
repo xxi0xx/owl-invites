@@ -268,7 +268,7 @@
 <main class="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
 	<header class="flex flex-wrap items-center justify-between gap-4">
 		<div><a href="/events" class="text-sm text-primary">← Back to events</a><h1 class="mt-2 text-3xl font-semibold">Invitations</h1>{#if currentEvent}<p class="text-sm font-medium text-neutral-700">{currentEvent.title}</p>{/if}<p class="mt-1 text-sm text-neutral-600">Each invitation is an isolated household and security boundary.</p></div>
-		<div class="flex flex-wrap gap-2"><Button variant="outline" href="/events/{eventId}/edit">Edit event</Button><Button variant="outline" href="/events/{eventId}/invite">Invitation card</Button><Button variant="outline" href="/events/{eventId}/import">Import CSV</Button><Button type="button" variant="outline" onclick={exportResponses}>Export CSV</Button><Button href="/events/{eventId}/messages">Message households</Button></div>
+		<div class="flex flex-wrap gap-2"><Button variant="outline" href="/events/{eventId}/edit">Edit event</Button><Button variant="outline" href="/events/{eventId}/invite">Invitation card</Button><Button variant="outline" href="/events/{eventId}/import">Import CSV</Button><Button type="button" variant="outline" onclick={exportResponses}>Export CSV</Button><Button variant="outline" href="/events/{eventId}/reminders">Reminders</Button><Button href="/events/{eventId}/messages">Message households</Button></div>
 	</header>
 	{#if error}<div role="alert" class="rounded-md bg-error-light p-4 text-sm text-error">{error}</div>{/if}
 	{#if notice}<div role="status" class="rounded-md bg-success-light p-4 text-sm text-success">{notice}</div>{/if}

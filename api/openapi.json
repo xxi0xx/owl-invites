@@ -360,8 +360,27 @@
       },
       "InvitationMessageResult": {
         "type": "object",
-        "required": ["sent"],
-        "properties": { "sent": { "type": "integer", "minimum": 0 } }
+        "required": ["attempted", "accepted", "failed", "skipped"],
+        "properties": {
+          "attempted": { "type": "integer", "minimum": 0 },
+          "accepted": { "type": "integer", "minimum": 0, "description": "Accepted by the configured email provider; not necessarily end-recipient delivery." },
+          "failed": { "type": "integer", "minimum": 0 },
+          "skipped": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "InvitationMessagePreviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["recipientGroup"],
+        "properties": { "recipientGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] } }
+      },
+      "InvitationMessagePreview": {
+        "type": "object",
+        "required": ["recipientGroup", "recipientHouseholds"],
+        "properties": {
+          "recipientGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "recipientHouseholds": { "type": "integer", "minimum": 0 }
+        }
       },
       "InvitationImportIssue": {
         "type": "object",
@@ -412,6 +431,39 @@
           "householdCount": { "type": "integer", "minimum": 1 },
           "assignedGuestCount": { "type": "integer", "minimum": 1 },
           "invitationIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
+      "Reminder": {
+        "type": "object",
+        "required": ["id", "eventId", "remindAt", "targetGroup", "message", "status", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "format": "uuid" },
+          "remindAt": { "type": "string", "format": "date-time" },
+          "targetGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "message": { "type": "string", "maxLength": 10000 },
+          "status": { "type": "string", "enum": ["scheduled", "processing", "sent", "cancelled", "failed"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateReminderRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["remindAt", "targetGroup", "message"],
+        "properties": {
+          "remindAt": { "type": "string", "format": "date-time" },
+          "targetGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "message": { "type": "string", "maxLength": 10000 }
+        }
+      },
+      "UpdateReminderRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "remindAt": { "type": "string", "format": "date-time" },
+          "targetGroup": { "type": "string", "enum": ["all", "attending", "maybe", "declined", "pending"] },
+          "message": { "type": "string", "maxLength": 10000 }
         }
       },
       "OpenEnrollmentRequest": {
@@ -708,6 +760,43 @@
         "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationMessageRequest" } } } },
         "responses": { "201": { "description": "One-way invitation broadcast sent", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationMessageResult" } } } } } } }
+      }
+    },
+    "/events/{eventId}/invitations/messages/preview": {
+      "post": {
+        "operationId": "previewInvitationHouseholdMessage",
+        "security": [{ "sessionCookie": [] }],
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InvitationMessagePreviewRequest" } } } },
+        "responses": { "200": { "description": "Authorized household recipient count without destination disclosure", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/InvitationMessagePreview" } } } } } } }
+      }
+    },
+    "/reminders/event/{eventId}": {
+      "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "get": {
+        "operationId": "listEventReminders",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Event reminders", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Reminder" } } } } } } } }
+      },
+      "post": {
+        "operationId": "createEventReminder",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateReminderRequest" } } } },
+        "responses": { "201": { "description": "Reminder scheduled", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/Reminder" } } } } } } }
+      }
+    },
+    "/reminders/{reminderId}": {
+      "parameters": [{ "name": "reminderId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+      "put": {
+        "operationId": "updateEventReminder",
+        "security": [{ "sessionCookie": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateReminderRequest" } } } },
+        "responses": { "200": { "description": "Scheduled reminder updated", "content": { "application/json": { "schema": { "type": "object", "required": ["data"], "properties": { "data": { "$ref": "#/components/schemas/Reminder" } } } } } } }
+      },
+      "delete": {
+        "operationId": "cancelEventReminder",
+        "security": [{ "sessionCookie": [] }],
+        "responses": { "200": { "description": "Scheduled reminder cancelled", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
       }
     },
     "/events/{eventId}/open-enrollment": {

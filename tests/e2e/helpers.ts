@@ -18,8 +18,8 @@ export async function getAuthToken(email: string): Promise<string> {
 	await new Promise((r) => setTimeout(r, 500));
 
 	const logs = execSync(
-		'docker compose logs --tail=50 openrsvp 2>&1',
-		{ cwd: '/Users/ypk/git/openrsvp', encoding: 'utf-8' }
+		'docker compose logs --tail=50 owl-invites 2>&1',
+		{ cwd: '..', encoding: 'utf-8' }
 	);
 
 	const lines = logs.split('\n');
@@ -70,16 +70,10 @@ export async function setSessionInBrowser(
 			sameSite: 'Lax'
 		}
 	]);
-	// Use addInitScript so localStorage is set BEFORE any page JS runs.
-	// This ensures the SPA reads the token on first load.
-	await page.addInitScript((token: string) => {
-		localStorage.setItem('openrsvp_session', token);
-	}, sessionToken);
 }
 
 /** Clear session from browser. */
 export async function clearSession(page: Page): Promise<void> {
-	await page.evaluate(() => localStorage.removeItem('openrsvp_session'));
 	await page.context().clearCookies();
 }
 

@@ -26,6 +26,9 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		return runServer(stderr)
+	}
 	if handled, err := buildinfo.RunVersionCommand(args, stdout); handled {
 		return err
 	}

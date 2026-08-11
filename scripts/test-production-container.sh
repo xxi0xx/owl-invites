@@ -93,6 +93,11 @@ jq -e --arg commit "$EXPECTED_COMMIT" '.version == "ci" and .commit == $commit a
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$EXPECTED_COMMIT"
 test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$IMAGE")" = ci
 test "$(docker image inspect --format '{{.Architecture}}' "$IMAGE")" = "$EXPECTED_ARCH"
+docker exec "$container" test -x /usr/local/bin/owl-invites
+if docker exec "$container" test -e /usr/local/bin/openrsvp; then
+  echo "production image still ships the retired openrsvp executable" >&2
+  exit 1
+fi
 
 if docker logs "$container" 2>&1 | grep -Fq "$secret"; then
   echo "container logs leaked OWL_INVITES_SECRET_KEY" >&2

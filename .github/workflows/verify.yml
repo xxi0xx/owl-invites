@@ -65,11 +65,9 @@ jobs:
         with:
           files: coverage.out
           fail_ci_if_error: false
-      - name: Build server and operator CLI
+      - name: Build canonical server and operator CLI
         run: |
-          CGO_ENABLED=1 bash scripts/build-go.sh /tmp/openrsvp ./cmd/openrsvp
           CGO_ENABLED=1 bash scripts/build-go.sh /tmp/owl-invites ./cmd/owl-invites
-          /tmp/openrsvp version --json
           /tmp/owl-invites version --json
 
   backend-postgres:
@@ -79,18 +77,18 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: openrsvp
-          POSTGRES_PASSWORD: openrsvp
-          POSTGRES_DB: openrsvp_test
+          POSTGRES_USER: owl_invites
+          POSTGRES_PASSWORD: owl_invites
+          POSTGRES_DB: owl_invites_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U openrsvp"
+          --health-cmd "pg_isready -U owl_invites"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      TEST_DATABASE_URL: postgres://openrsvp:openrsvp@localhost:5432/openrsvp_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://owl_invites:owl_invites@localhost:5432/owl_invites_test?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -116,13 +114,13 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: openrsvp
-          POSTGRES_PASSWORD: openrsvp
-          POSTGRES_DB: openrsvp_test
+          POSTGRES_USER: owl_invites
+          POSTGRES_PASSWORD: owl_invites
+          POSTGRES_DB: owl_invites_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U openrsvp"
+          --health-cmd "pg_isready -U owl_invites"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -143,12 +141,11 @@ jobs:
         run: |
           mkdir -p internal/server/frontend bin
           touch internal/server/frontend/index.html
-          CGO_ENABLED=1 bash scripts/build-go.sh bin/openrsvp ./cmd/openrsvp
           CGO_ENABLED=1 bash scripts/build-go.sh bin/owl-invites ./cmd/owl-invites
       - name: Destroy and restore PostgreSQL application state
         env:
-          PG_ADMIN_DSN: postgres://openrsvp:openrsvp@127.0.0.1:5432/postgres?sslmode=disable
-          SERVER_BINARY: ./bin/openrsvp
+          PG_ADMIN_DSN: postgres://owl_invites:owl_invites@127.0.0.1:5432/postgres?sslmode=disable
+          SERVER_BINARY: ./bin/owl-invites
           CLI_BINARY: ./bin/owl-invites
         run: bash scripts/test-postgres-restore.sh
 
@@ -189,7 +186,7 @@ jobs:
           mkdir -p internal/server/frontend
           cp -R web/build/. internal/server/frontend/
           mkdir -p bin
-          CGO_ENABLED=1 bash scripts/build-go.sh bin/openrsvp ./cmd/openrsvp
+          CGO_ENABLED=1 bash scripts/build-go.sh bin/owl-invites ./cmd/owl-invites
       - name: Start application
         env:
           ENV: development
@@ -207,7 +204,7 @@ jobs:
           SMTP_FROM: noreply@owl-invites.test
         run: |
           mkdir -p "$UPLOADS_DIR"
-          ./bin/openrsvp >"$RUNNER_TEMP/owl-invites-e2e.log" 2>&1 &
+          ./bin/owl-invites >"$RUNNER_TEMP/owl-invites-e2e.log" 2>&1 &
           echo $! >"$RUNNER_TEMP/owl-invites-e2e.pid"
       - name: Wait for application and Mailpit
         run: |

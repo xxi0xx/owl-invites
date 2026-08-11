@@ -28,8 +28,6 @@ RUN rm -rf internal/server/frontend && \
     cp -r /app/web/build/* internal/server/frontend/ 2>/dev/null || true
 COPY --from=frontend /app/web/build ./internal/server/frontend/
 RUN VERSION="$VERSION" COMMIT="$COMMIT" BUILD_STATE="$BUILD_STATE" CGO_ENABLED=1 GOOS=linux \
-    ./scripts/build-go.sh /openrsvp ./cmd/openrsvp
-RUN VERSION="$VERSION" COMMIT="$COMMIT" BUILD_STATE="$BUILD_STATE" CGO_ENABLED=1 GOOS=linux \
     ./scripts/build-go.sh /owl-invites ./cmd/owl-invites
 
 # Stage 3: Final image
@@ -44,9 +42,8 @@ LABEL org.opencontainers.image.title="Owl Invites" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.licenses="MIT"
 RUN apk add --no-cache ca-certificates tzdata && \
-    addgroup -S -g 10001 openrsvp && \
-    adduser -S -D -H -u 10001 -G openrsvp openrsvp
-COPY --from=backend /openrsvp /usr/local/bin/openrsvp
+    addgroup -S -g 10001 owl-invites && \
+    adduser -S -D -H -u 10001 -G owl-invites owl-invites
 COPY --from=backend /owl-invites /usr/local/bin/owl-invites
 RUN mkdir -p /app /data /data/uploads /run/secrets && \
     chown -R 10001:10001 /data
@@ -59,4 +56,4 @@ ENV DB_DSN=/data/openrsvp.db \
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health/ready || exit 1
-ENTRYPOINT ["/usr/local/bin/openrsvp"]
+ENTRYPOINT ["/usr/local/bin/owl-invites"]

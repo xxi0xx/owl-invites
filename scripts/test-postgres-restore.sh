@@ -7,8 +7,8 @@ set -euo pipefail
 
 source_database=owl_invites_gate3_source
 restore_database=owl_invites_gate3_restored
-source_dsn="postgres://openrsvp:openrsvp@127.0.0.1:5432/${source_database}?sslmode=disable"
-restore_dsn="postgres://openrsvp:openrsvp@127.0.0.1:5432/${restore_database}?sslmode=disable"
+source_dsn="postgres://owl_invites:owl_invites@127.0.0.1:5432/${source_database}?sslmode=disable"
+restore_dsn="postgres://owl_invites:owl_invites@127.0.0.1:5432/${restore_database}?sslmode=disable"
 secret=4c64fb646f28c3cf57d320675a546e290173f4ab91786764
 wrong_secret=f84a173ee20738df4867a3d18439aa9f63a81cf46c996d9f
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/owl-invites-postgres-restore.XXXXXX")

@@ -1,17 +1,17 @@
 services:
-  openrsvp:
+  owl-invites:
     build: .
     depends_on:
       - mailpit
     ports:
       - "8091:8080"
     volumes:
-      - openrsvp-data:/data
+      - owl-invites-data:/data
     env_file:
       - .env
     environment:
       - DB_DRIVER=sqlite
-      - DB_DSN=/data/openrsvp.db
+      - DB_DSN=/data/owl-invites.db
       - UPLOADS_DIR=/data/uploads
       - NOTIFICATION_EMAIL_PROVIDER=smtp
       - SMTP_HOST=mailpit
@@ -19,7 +19,7 @@ services:
       - SMTP_FROM=noreply@owl-invites.local
       - BASE_URL=http://localhost:8091
       - OWL_INVITES_SECRET_KEY=${OWL_INVITES_SECRET_KEY:?OWL_INVITES_SECRET_KEY required}
-      - FEEDBACK_EMAIL=feedback@openrsvp.local
+      - FEEDBACK_EMAIL=feedback@owl-invites.local
     restart: unless-stopped
 
   mailpit:
@@ -29,4 +29,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  openrsvp-data:
+  owl-invites-data:

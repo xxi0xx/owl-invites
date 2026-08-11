@@ -43,7 +43,7 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 		await page.getByRole('button', { name: 'Complete setup' }).click();
 		await expect(page).toHaveURL(/\/events$/);
 		await page.goto('/auth/logout');
-		await page.goto('/');
+		await expect(page).toHaveURL(/\/auth\/login$/);
 	}
 	await expect(page).toHaveURL(/\/auth\/login$/);
 	await page.getByLabel('Email address').fill(ADMIN_EMAIL);

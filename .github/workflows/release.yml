@@ -119,6 +119,7 @@ jobs:
         env:
           IMAGE: ghcr.io/${{ github.repository }}
           DIGEST: ${{ steps.image.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           docker buildx imagetools inspect "$IMAGE@$DIGEST" \
             --format '{{ json (index .SBOM "linux/amd64").SPDX }}' \

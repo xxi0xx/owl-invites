@@ -150,7 +150,7 @@ func seed(statePath string) error {
 	}
 	additionalGuestID := updated.Guests[1].ID
 	const additionalGuestAnswer = "additional guest answer survived"
-	updated, err = invitations.SubmitForSession(ctx, session, invitation.SubmitRequest{
+	_, err = invitations.SubmitForSession(ctx, session, invitation.SubmitRequest{
 		Version:           updated.Response.Version,
 		AssignedGuests:    []invitation.GuestAttendanceInput{{GuestID: household.Guests[0].ID, Attendance: invitation.AttendanceAttending}},
 		AdditionalGuests:  []invitation.AdditionalGuestInput{{ID: additionalGuestID, Name: "Recovery Plus One", Attendance: invitation.AttendanceMaybe}},

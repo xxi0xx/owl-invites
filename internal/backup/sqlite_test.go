@@ -80,7 +80,7 @@ func TestGate3ToGate5SQLiteUpgradePreservesCapabilityAndState(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, updated.Guests, 2)
 	additionalGuestID := updated.Guests[1].ID
-	updated, err = service.SubmitForSession(ctx, session, invitation.SubmitRequest{
+	_, err = service.SubmitForSession(ctx, session, invitation.SubmitRequest{
 		Version:           updated.Response.Version,
 		AssignedGuests:    []invitation.GuestAttendanceInput{{GuestID: household.Guests[0].ID, Attendance: invitation.AttendanceAttending}},
 		AdditionalGuests:  []invitation.AdditionalGuestInput{{ID: additionalGuestID, Name: "Taylor Plus One", Attendance: invitation.AttendanceMaybe}},

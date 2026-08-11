@@ -57,10 +57,16 @@ extract_routes() {
 get /events/:p/invitations
 post /events/:p/invitations
 get /events/:p/invitations/:p
+put /events/:p/invitations/:p
 post /events/:p/invitations/:p/deliver
 post /events/:p/invitations/:p/rotate
 post /events/:p/invitations/:p/revoke
+get /events/:p/invitations/import/template
+post /events/:p/invitations/import/preview
+post /events/:p/invitations/import/commit
+get /events/:p/invitations/export
 post /events/:p/invitations/messages
+post /events/:p/invitations/messages/preview
 get /events/:p/open-enrollment
 put /events/:p/open-enrollment
 post /events/:p/open-enrollment/rotate

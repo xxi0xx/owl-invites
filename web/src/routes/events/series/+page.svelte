@@ -33,7 +33,7 @@
 </script>
 
 <svelte:head>
-	<title>Recurring Series -- OpenRSVP</title>
+	<title>Recurring Series -- Owl Invites</title>
 </svelte:head>
 
 <AppShell>

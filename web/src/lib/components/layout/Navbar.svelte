@@ -27,7 +27,10 @@
 		<div class="flex items-center justify-between h-16">
 			<!-- Logo + Nav Links -->
 			<div class="flex items-center gap-8">
-				<a href="/" class="text-xl font-display font-bold text-primary">OpenRSVP</a>
+				<a href="/" class="flex items-center gap-2 text-xl font-display font-bold text-primary" aria-label="Owl Invites home">
+					<img src="/owl-invites-mark.svg" alt="" aria-hidden="true" class="h-8 w-8" />
+					<span>Owl Invites</span>
+				</a>
 				<div class="hidden md:flex items-center gap-1">
 					<a
 						href="/events"

@@ -119,7 +119,7 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) error {
 			return nil
 		}
 
-		if err := s.sendEmail(ctx, email, "Sign in to OpenRSVP", htmlBody, plainBody); err != nil {
+		if err := s.sendEmail(ctx, email, "Sign in to Owl Invites", htmlBody, plainBody); err != nil {
 			s.logger.Error().Err(err).Str("email", email).Msg("failed to send magic link email")
 			// Don't return error to caller — we don't want to leak whether the email was valid
 		}

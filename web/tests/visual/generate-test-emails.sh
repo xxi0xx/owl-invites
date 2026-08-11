@@ -4,7 +4,7 @@ set -euo pipefail
 # Generate test emails by exercising the running app so Mailpit captures them.
 #
 # Prerequisites:
-#   docker compose up -d   (starts openrsvp + mailpit)
+#   docker compose up -d   (starts owl-invites + mailpit)
 #
 # Usage:
 #   ./tests/visual/generate-test-emails.sh
@@ -16,7 +16,7 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://localhost:8091}"
 MAILPIT_URL="${MAILPIT_URL:-http://localhost:8025}"
 
-echo "=== OpenRSVP email test generator ==="
+echo "=== Owl Invites email test generator ==="
 echo ""
 echo "App URL:     $BASE_URL"
 echo "Mailpit URL: $MAILPIT_URL"
@@ -32,7 +32,7 @@ fi
 
 if ! curl -sf "$MAILPIT_URL/api/v1/messages" > /dev/null 2>&1; then
   echo "ERROR: Mailpit is not responding at $MAILPIT_URL"
-  echo "       Make sure mailpit is running on the openrsvp-net network."
+  echo "       Make sure mailpit is running on the owl-invites-net network."
   exit 1
 fi
 

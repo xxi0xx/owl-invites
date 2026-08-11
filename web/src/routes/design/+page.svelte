@@ -57,7 +57,7 @@
 </script>
 
 <svelte:head>
-	<title>Design System | OpenRSVP</title>
+	<title>Design System | Owl Invites</title>
 </svelte:head>
 
 <div class="min-h-screen bg-neutral-50 font-body">
@@ -67,7 +67,7 @@
 	>
 		<div class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
 			<div>
-				<h1 class="font-display text-2xl font-bold text-neutral-900">OpenRSVP Design System</h1>
+				<h1 class="font-display text-2xl font-bold text-neutral-900">Owl Invites Design System</h1>
 				<p class="text-sm text-neutral-500">Component gallery and token reference</p>
 			</div>
 			<button
@@ -183,11 +183,11 @@
 			<p class="text-neutral-500 mb-8">Three font families for display, body, and code.</p>
 
 			<!-- Display font -->
-			<h3 class="font-display text-lg font-semibold text-neutral-800 mb-4">Display -- Satoshi</h3>
+			<h3 class="font-display text-lg font-semibold text-neutral-800 mb-4">Display -- Plus Jakarta Sans</h3>
 			<div class="space-y-4 mb-8 rounded-lg border border-neutral-200 bg-surface p-6">
 				<div>
 					<p class="font-mono text-xs text-neutral-400 mb-1">font-display text-6xl font-bold</p>
-					<p class="font-display text-6xl font-bold text-neutral-900">OpenRSVP</p>
+					<p class="font-display text-6xl font-bold text-neutral-900">Owl Invites</p>
 				</div>
 				<div>
 					<p class="font-mono text-xs text-neutral-400 mb-1">font-display text-4xl font-bold</p>
@@ -205,7 +205,7 @@
 				<div>
 					<p class="font-mono text-xs text-neutral-400 mb-1">font-body text-base font-normal (400)</p>
 					<p class="font-body text-base font-normal text-neutral-900">
-						The quick brown fox jumps over the lazy dog. OpenRSVP is a self-hosted platform for
+						The quick brown fox jumps over the lazy dog. Owl Invites is a self-hosted platform for
 						creating beautiful event invitations and managing RSVPs with ease.
 					</p>
 				</div>
@@ -609,7 +609,7 @@
 	<!-- Footer -->
 	<footer class="border-t border-neutral-200 py-8 text-center">
 		<p class="text-sm text-neutral-400">
-			OpenRSVP Design System -- dev-only reference page
+			Owl Invites Design System -- dev-only reference page
 		</p>
 	</footer>
 </div>

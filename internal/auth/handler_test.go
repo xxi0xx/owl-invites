@@ -84,7 +84,7 @@ func TestHandleExportMe_Success(t *testing.T) {
 	rr := testutil.DoAuthRequest(t, env.handler.Routes(), "GET", "/me/export", rawToken, nil)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, `attachment; filename="openrsvp-export.json"`, rr.Header().Get("Content-Disposition"))
+	assert.Equal(t, `attachment; filename="owl-invites-export.json"`, rr.Header().Get("Content-Disposition"))
 
 	body := testutil.ParseJSON(t, rr)
 

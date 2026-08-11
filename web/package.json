@@ -1,5 +1,7 @@
 {
-	"name": "web",
+	"name": "owl-invites-web",
+	"description": "Owl Invites web application",
+	"repository": "https://github.com/xxi0xx/owl-invites",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

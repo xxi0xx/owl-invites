@@ -229,7 +229,7 @@ func (s *Service) SendTest(ctx context.Context, webhookID string, dispatcher *Di
 		EventType: "test",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Data: map[string]string{
-			"message": "This is a test webhook delivery from OpenRSVP.",
+			"message": "This is a test webhook delivery from Owl Invites.",
 		},
 	}
 

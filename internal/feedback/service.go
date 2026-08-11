@@ -60,7 +60,7 @@ func (s *Service) Submit(ctx context.Context, organizerEmail, feedbackType, mess
 			log.Error().Err(err).Msg("failed to render feedback confirmation template")
 			return nil
 		}
-		if err := s.sendEmail(ctx, organizerEmail, "We received your feedback — OpenRSVP", htmlBody, plain); err != nil {
+		if err := s.sendEmail(ctx, organizerEmail, "We received your feedback — Owl Invites", htmlBody, plain); err != nil {
 			log.Error().Err(err).Str("email", organizerEmail).Msg("failed to send feedback confirmation email")
 		}
 	}
@@ -112,7 +112,7 @@ func (s *Service) submitGuestGitHub(ctx context.Context, message, contactEmail, 
 }
 
 func (s *Service) submitGuestEmail(ctx context.Context, message, contactEmail, source string) error {
-	subject := fmt.Sprintf("[OpenRSVP Guest Feedback] %s", truncate(message, 60))
+	subject := fmt.Sprintf("[Owl Invites Guest Feedback] %s", truncate(message, 60))
 	contact := contactEmail
 	if contact == "" {
 		contact = "(anonymous)"
@@ -135,7 +135,7 @@ func (s *Service) submitGuestEmail(ctx context.Context, message, contactEmail, s
 }
 
 func (s *Service) submitEmail(ctx context.Context, organizerEmail, feedbackType, message string) error {
-	subject := fmt.Sprintf("[OpenRSVP Feedback - %s] %s", feedbackType, truncate(message, 60))
+	subject := fmt.Sprintf("[Owl Invites Feedback - %s] %s", feedbackType, truncate(message, 60))
 	plain := fmt.Sprintf("Type: %s\nFrom: %s\n\n%s", feedbackType, organizerEmail, message)
 	// HTML-escape every user/organizer-controlled field before interpolating
 	// into the email body. The message originates from an authenticated

@@ -18,7 +18,7 @@
 </script>
 
 <svelte:head>
-	<title>Signing out -- OpenRSVP</title>
+	<title>Signing out -- Owl Invites</title>
 </svelte:head>
 
 <div class="min-h-screen flex items-center justify-center px-4">

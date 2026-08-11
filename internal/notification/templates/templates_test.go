@@ -1,11 +1,35 @@
 package templates
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRepresentativeEmailsUseOnlyOwlInvitesBranding(t *testing.T) {
+	rendered := make([]string, 0, 8)
+	for _, render := range []func() (string, string, error){
+		func() (string, string, error) { return RenderMagicLink("https://invites.example", "token", 15) },
+		func() (string, string, error) {
+			return RenderRetentionWarning("Party", "tomorrow", "https://invites.example/events")
+		},
+		func() (string, string, error) { return RenderFeedbackConfirmation("feature", true) },
+		func() (string, string, error) {
+			return RenderCoHostInvitation("Party", "tomorrow", "Town Hall", "Alex", "https://invites.example/events/1")
+		},
+	} {
+		htmlBody, plainBody, err := render()
+		require.NoError(t, err)
+		rendered = append(rendered, htmlBody, plainBody)
+	}
+	for _, body := range rendered {
+		assert.Contains(t, body, "Owl Invites")
+		assert.NotContains(t, body, "OpenRSVP")
+		assert.NotContains(t, strings.ToLower(body), "openrsvp")
+	}
+}
 
 func TestRenderRetentionWarning(t *testing.T) {
 	html, plain, err := RenderRetentionWarning("Birthday Party", "March 15, 2026", "http://localhost:8080/events")

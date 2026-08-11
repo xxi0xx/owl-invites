@@ -33,7 +33,7 @@ import (
 	"github.com/xxi0xx/owl-invites/internal/webhook"
 )
 
-// Server is the main HTTP server for OpenRSVP.
+// Server is the main HTTP server for Owl Invites.
 type Server struct {
 	cfg                   *config.Config
 	db                    database.DB

@@ -88,7 +88,7 @@ func TestBuildNotificationRegistryVonageSMS(t *testing.T) {
 		NotificationSMSProvider: "vonage",
 		VonageAPIKey:            "key",
 		VonageAPISecret:         "secret",
-		VonageFrom:              "OpenRSVP",
+		VonageFrom:              "Owl Invites",
 	}
 
 	r := buildNotificationRegistry(cfg, zerolog.Nop())

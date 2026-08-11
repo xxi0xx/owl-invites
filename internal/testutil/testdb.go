@@ -201,7 +201,7 @@ func TestConfig() *config.Config {
 		NotificationEmailProvider: "smtp",
 		SMTPHost:                  "localhost",
 		SMTPPort:                  587,
-		SMTPFrom:                  "test@openrsvp.local",
+		SMTPFrom:                  "test@owl-invites.local",
 		DefaultRetentionDays:      30,
 		MaxCoHostsPerEvent:        10,
 		// Most legacy tests exercise the pre-Gate-1 open-signup behavior

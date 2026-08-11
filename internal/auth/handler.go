@@ -239,7 +239,7 @@ func (h *Handler) handleExportMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", `attachment; filename="openrsvp-export.json"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="owl-invites-export.json"`)
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(doc)
 }

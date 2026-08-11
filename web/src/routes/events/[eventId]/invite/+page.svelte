@@ -240,7 +240,7 @@
 </script>
 
 <svelte:head>
-	<title>Invite Designer -- OpenRSVP</title>
+	<title>Invite Designer -- Owl Invites</title>
 </svelte:head>
 
 <AppShell>

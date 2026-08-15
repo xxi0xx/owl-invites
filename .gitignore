@@ -46,3 +46,7 @@ _bmad/
 spec/
 MARKET_RESEARCH.md
 tests/e2e/node_modules/
+
+# Local Codex development environment
+.codex-tools/
+.codex-cache/

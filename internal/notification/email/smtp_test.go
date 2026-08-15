@@ -44,6 +44,49 @@ func TestStripCRLF(t *testing.T) {
 	}
 }
 
+func TestParseFromAddressPlainAddress(t *testing.T) {
+	header, envelope, err := parseFromAddress("rsvp@mail.davidandmaria.org")
+	if err != nil {
+		t.Fatalf("parseFromAddress: %v", err)
+	}
+
+	if header != "rsvp@mail.davidandmaria.org" {
+		t.Fatalf("header = %q", header)
+	}
+
+	if envelope != "rsvp@mail.davidandmaria.org" {
+		t.Fatalf("envelope = %q", envelope)
+	}
+}
+
+func TestParseFromAddressDisplayName(t *testing.T) {
+	header, envelope, err := parseFromAddress(
+		"David & Maria <rsvp@mail.davidandmaria.org>",
+	)
+	if err != nil {
+		t.Fatalf("parseFromAddress: %v", err)
+	}
+
+	if !strings.Contains(header, "David & Maria") {
+		t.Fatalf("header missing display name: %q", header)
+	}
+
+	if !strings.Contains(header, "rsvp@mail.davidandmaria.org") {
+		t.Fatalf("header missing address: %q", header)
+	}
+
+	if envelope != "rsvp@mail.davidandmaria.org" {
+		t.Fatalf("envelope = %q", envelope)
+	}
+}
+
+func TestParseFromAddressRejectsInvalidAddress(t *testing.T) {
+	_, _, err := parseFromAddress("not an address")
+	if err == nil {
+		t.Fatal("expected invalid address to fail")
+	}
+}
+
 // --- MIME assembly ----------------------------------------------------------
 
 func TestWriteAlternativeParts_TextAndHTML(t *testing.T) {

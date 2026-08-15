@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/xxi0xx/owl-invites/internal/errcode"
+	"github.com/xxi0xx/owl-invites/internal/notification/templates"
 )
 
 type EmailSender func(ctx context.Context, eventID, invitationID, to, subject, htmlBody, plainBody string) error
@@ -119,10 +120,41 @@ func (s *Service) Deliver(ctx context.Context, invitationID string) error {
 		return err
 	}
 	url := s.privateAccessURL(inv)
-	subject := "You're invited — " + household.Event.Title
-	plain := fmt.Sprintf("You have been invited to %s.\n\nOpen your private invitation:\n%s\n\nDo not forward this private link.", household.Event.Title, url)
-	htmlBody := fmt.Sprintf(`<p>You have been invited to <strong>%s</strong>.</p><p><a href="%s">Open your private invitation</a></p><p>Do not forward this private link.</p>`, html.EscapeString(household.Event.Title), html.EscapeString(url))
-	return s.sendEmail(ctx, inv.EventID, inv.ID, *inv.ContactEmail, subject, htmlBody, plain)
+
+	eventDate := ""
+	if !household.Event.EventDate.IsZero() {
+		eventTime := household.Event.EventDate
+
+		if household.Event.Timezone != "" {
+			if loc, err := time.LoadLocation(household.Event.Timezone); err == nil {
+				eventTime = eventTime.In(loc)
+			}
+		}
+
+		eventDate = eventTime.Format("Monday, January 2, 2006 at 3:04 PM")
+	}
+
+	htmlBody, plainBody, err := templates.RenderHouseholdInvitation(
+		household.Event.Title,
+		eventDate,
+		household.Event.Location,
+		url,
+	)
+	if err != nil {
+		return err
+	}
+
+	subject := "You're invited to " + household.Event.Title
+
+	return s.sendEmail(
+		ctx,
+		inv.EventID,
+		inv.ID,
+		*inv.ContactEmail,
+		subject,
+		htmlBody,
+		plainBody,
+	)
 }
 
 func (s *Service) attemptDelivery(ctx context.Context, invitationID, warning string) DeliveryResult {

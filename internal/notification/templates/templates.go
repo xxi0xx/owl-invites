@@ -12,7 +12,7 @@ import (
 // attendee RSVP, lookup, waitlist, and attendee-message templates were removed
 // with their authorization model.
 //
-//go:embed magic_link.html retention_warning.html feedback_confirmation.html cohost_invitation.html
+//go:embed magic_link.html retention_warning.html feedback_confirmation.html cohost_invitation.html household_invitation.html
 var templateFS embed.FS
 
 var (
@@ -20,6 +20,9 @@ var (
 	retentionWarningTmpl     = template.Must(template.ParseFS(templateFS, "retention_warning.html"))
 	feedbackConfirmationTmpl = template.Must(template.ParseFS(templateFS, "feedback_confirmation.html"))
 	cohostInvitationTmpl     = template.Must(template.ParseFS(templateFS, "cohost_invitation.html"))
+	householdInvitationTmpl  = template.Must(
+		template.ParseFS(templateFS, "household_invitation.html"),
+	)
 )
 
 type magicLinkData struct {
@@ -38,6 +41,75 @@ func RenderMagicLink(baseURL, token string, expiryMinutes int) (html, plain stri
 	}
 	plain = fmt.Sprintf("Sign in to Owl Invites\n\nClick the link below to sign in:\n%s\n\nThis link expires in %d minutes.\n\nIf you did not request this link, you can safely ignore this email.", url, expiryMinutes)
 	return buf.String(), plain, nil
+}
+
+type householdInvitationData struct {
+	EventTitle    string
+	EventDate     string
+	Location      string
+	InvitationURL string
+	Colors        EmailColors
+}
+
+func RenderHouseholdInvitation(
+	eventTitle,
+	eventDate,
+	location,
+	invitationURL string,
+) (htmlBody, plain string, err error) {
+	data := householdInvitationData{
+		EventTitle:    eventTitle,
+		EventDate:     eventDate,
+		Location:      location,
+		InvitationURL: invitationURL,
+		Colors:        DefaultEmailColors(),
+	}
+
+	var buf bytes.Buffer
+	if err := householdInvitationTmpl.Execute(&buf, data); err != nil {
+		return "", "", fmt.Errorf(
+			"render household invitation template: %w",
+			err,
+		)
+	}
+
+	var text strings.Builder
+
+	text.WriteString("You're invited\n\n")
+	text.WriteString(fmt.Sprintf(
+		"You're invited to %s.\n\n",
+		eventTitle,
+	))
+
+	text.WriteString(
+		"View your invitation for the event details and RSVP for your household.\n\n",
+	)
+
+	if eventDate != "" {
+		text.WriteString(fmt.Sprintf("Date: %s\n", eventDate))
+	}
+
+	if location != "" {
+		text.WriteString(fmt.Sprintf("Location: %s\n", location))
+	}
+
+	if eventDate != "" || location != "" {
+		text.WriteString("\n")
+	}
+
+	text.WriteString("View invitation & RSVP:\n")
+	text.WriteString(invitationURL)
+	text.WriteString("\n\n")
+
+	text.WriteString(
+		"This invitation link is unique to your household. Please don't share it.\n",
+	)
+
+	text.WriteString(
+		"If you weren't expecting this invitation, you can safely ignore this email.\n",
+	)
+
+	return buf.String(), text.String(), nil
 }
 
 type retentionWarningData struct {

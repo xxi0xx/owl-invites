@@ -8,6 +8,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRenderHouseholdInvitation(t *testing.T) {
+	htmlBody, plain, err := RenderHouseholdInvitation(
+		"David and Maria's Celebration",
+		"Saturday, May 27, 2028 at 4:00 PM",
+		"Santa Rosa de Cabal",
+		"https://rsvp.example.com/invitation/accept#test-capability",
+	)
+	if err != nil {
+		t.Fatalf("RenderHouseholdInvitation: %v", err)
+	}
+
+	for _, want := range []string{
+		"David and Maria",
+		"View invitation",
+		"Santa Rosa de Cabal",
+		"test-capability",
+	} {
+		if !strings.Contains(htmlBody, want) {
+			t.Fatalf("HTML missing %q:\n%s", want, htmlBody)
+		}
+	}
+
+	for _, want := range []string{
+		"David and Maria's Celebration",
+		"Saturday, May 27, 2028 at 4:00 PM",
+		"Santa Rosa de Cabal",
+		"View invitation & RSVP",
+		"unique to your household",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("plain text missing %q:\n%s", want, plain)
+		}
+	}
+}
+
 func TestRepresentativeEmailsUseOnlyOwlInvitesBranding(t *testing.T) {
 	rendered := make([]string, 0, 8)
 	for _, render := range []func() (string, string, error){

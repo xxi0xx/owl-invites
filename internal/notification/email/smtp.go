@@ -8,6 +8,7 @@ import (
 	"mime"
 	"mime/quotedprintable"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -45,6 +46,24 @@ func (p *SMTPProvider) Channel() notification.Channel {
 	return notification.ChannelEmail
 }
 
+func parseFromAddress(raw string) (header string, envelope string, err error) {
+	raw = stripCRLF(strings.TrimSpace(raw))
+	if raw == "" {
+		return "", "", fmt.Errorf("SMTP from address is empty")
+	}
+
+	addr, err := mail.ParseAddress(raw)
+	if err != nil {
+		return "", "", fmt.Errorf("parse SMTP from address: %w", err)
+	}
+
+	if addr.Name == "" {
+		return addr.Address, addr.Address, nil
+	}
+
+	return addr.String(), addr.Address, nil
+}
+
 // Send composes a proper MIME email and delivers it via SMTP.
 // When attachments are present, the structure is:
 //
@@ -57,12 +76,15 @@ func (p *SMTPProvider) Channel() notification.Channel {
 // Without attachments, the structure is just multipart/alternative.
 func (p *SMTPProvider) Send(ctx context.Context, msg *notification.Message) (*notification.SendResult, error) {
 	addr := net.JoinHostPort(p.host, p.port)
-
+	fromHeader, envelopeFrom, err := parseFromAddress(p.from)
+	if err != nil {
+		return nil, err
+	}
 	var buf bytes.Buffer
 	// Defensive: strip CR/LF from header values to defeat header injection
 	// even if upstream validation is bypassed. mime.QEncoding handles the
 	// Subject separately by encoding non-printable bytes.
-	buf.WriteString(fmt.Sprintf("From: %s\r\n", stripCRLF(p.from)))
+	buf.WriteString(fmt.Sprintf("From: %s\r\n", fromHeader))
 	buf.WriteString(fmt.Sprintf("To: %s\r\n", stripCRLF(msg.To)))
 	buf.WriteString(fmt.Sprintf("Subject: %s\r\n", mime.QEncoding.Encode("utf-8", stripCRLF(msg.Subject))))
 	buf.WriteString("MIME-Version: 1.0\r\n")
@@ -122,7 +144,7 @@ func (p *SMTPProvider) Send(ctx context.Context, msg *notification.Message) (*no
 	}
 
 	to := []string{msg.To}
-	if err := smtp.SendMail(addr, auth, p.from, to, buf.Bytes()); err != nil {
+	if err := smtp.SendMail(addr, auth, envelopeFrom, to, buf.Bytes()); err != nil {
 		return nil, fmt.Errorf("smtp send: %w", err)
 	}
 

@@ -15,7 +15,7 @@ Repository dependencies are prepared with:
 
 The expected environment includes:
 
-- Go 1.26.5
+- Go 1.26.6
 - Node.js 22
 - npm
 - CGO with MSYS2 UCRT64 GCC

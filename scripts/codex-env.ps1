@@ -36,7 +36,7 @@ foreach ($directory in $directories) {
 }
 
 # Canonical Owl Invites Go toolchain.
-$env:GOTOOLCHAIN = "go1.26.5"
+$env:GOTOOLCHAIN = "go1.26.6"
 $env:CGO_ENABLED = "1"
 
 # Keep Go artifacts inside the workspace so Codex sandbox

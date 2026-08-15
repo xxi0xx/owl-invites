@@ -48,11 +48,11 @@ Write-Host "== Toolchain =="
 $goVersion = (& go env GOVERSION).Trim()
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Unable to resolve the Go 1.26.5 toolchain."
+    throw "Unable to resolve the Go 1.26.6 toolchain."
 }
 
-if ($goVersion -ne "go1.26.5") {
-    throw "Expected Go 1.26.5; got $goVersion."
+if ($goVersion -ne "go1.26.6") {
+    throw "Expected Go 1.26.6; got $goVersion."
 }
 
 Write-Host "Go:   $goVersion"

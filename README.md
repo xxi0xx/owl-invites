@@ -51,7 +51,7 @@ domain terminology. They are not legacy branding.
 
 ## Build and test
 
-Required toolchains are Go 1.26.5+, Node.js 22, npm, a C compiler for SQLite,
+Required toolchains are Go 1.26.6+, Node.js 22, npm, a C compiler for SQLite,
 and Docker/BuildKit for the production image.
 
 ```bash

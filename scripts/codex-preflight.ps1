@@ -78,11 +78,11 @@ if ($RequireCleanWorktree) {
 if (Get-Command go -ErrorAction SilentlyContinue) {
     $goVersion = (& go env GOVERSION 2>$null).Trim()
 
-    if ($goVersion -eq "go1.26.5") {
-        Pass "Go 1.26.5"
+    if ($goVersion -eq "go1.26.6") {
+        Pass "Go 1.26.6"
     }
     else {
-        Fail "Expected Go 1.26.5; found '$goVersion'"
+        Fail "Expected Go 1.26.6; found '$goVersion'"
     }
 }
 else {

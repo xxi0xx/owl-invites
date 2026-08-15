@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
       - name: Install CGO compiler
         run: sudo apt-get update && sudo apt-get install -y gcc
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
       - name: Install CGO compiler
         run: sudo apt-get update && sudo apt-get install -y gcc
@@ -136,7 +136,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
       - name: Install CGO and PostgreSQL client tools
         run: sudo apt-get update && sudo apt-get install -y gcc postgresql-client
@@ -175,7 +175,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
       - name: Install build and browser dependencies
         run: |
@@ -235,7 +235,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - name: golangci-lint
@@ -250,7 +250,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - name: Create frontend placeholder for go:embed
         run: mkdir -p internal/server/frontend && touch internal/server/frontend/index.html
       - name: Install govulncheck

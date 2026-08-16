@@ -129,7 +129,49 @@ func TestServerIntegration(t *testing.T) {
 			}
 		}
 	})
+	t.Run("public config exposes non-secret instance metadata", func(t *testing.T) {
+		originalInstanceName := srv.cfg.InstanceName
+		originalSupportEmail := srv.cfg.SupportEmail
+		originalSMSSenderName := srv.cfg.NotificationSMSSenderName
 
+		t.Cleanup(func() {
+			srv.cfg.InstanceName = originalInstanceName
+			srv.cfg.SupportEmail = originalSupportEmail
+			srv.cfg.NotificationSMSSenderName = originalSMSSenderName
+		})
+
+		srv.cfg.InstanceName = "Test Owl Invites"
+		srv.cfg.SupportEmail = "support@example.com"
+		srv.cfg.NotificationSMSSenderName = "Test Sender via Owl-Invites"
+
+		rr := doJSON(h, http.MethodGet, "/api/v1/config", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET /api/v1/config: got %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+		}
+
+		var body struct {
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+
+		want := map[string]string{
+			"instanceName":  "Test Owl Invites",
+			"supportEmail":  "support@example.com",
+			"smsSenderName": "Test Sender via Owl-Invites",
+		}
+
+		for key, expected := range want {
+			if got, ok := body.Data[key].(string); !ok || got != expected {
+				t.Errorf("%s: got %#v, want %q", key, body.Data[key], expected)
+			}
+		}
+
+		if _, ok := body.Data["smsEnabled"]; !ok {
+			t.Error("public config is missing smsEnabled")
+		}
+	})
 	t.Run("liveness exposes non-secret build identity", func(t *testing.T) {
 		rr := doJSON(h, http.MethodGet, "/health", nil)
 		var body map[string]string

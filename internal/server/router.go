@@ -60,12 +60,15 @@ func (s *Server) routes() *chi.Mux {
 		api.Get("/health", s.handleHealth)
 		api.Get("/openapi.json", apidoc.ServeHTTP)
 
-		// Public app config (non-sensitive feature flags).
+		// Public app config (non-sensitive instance metadata and feature flags).
 		api.Get("/config", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
-					"smsEnabled": s.cfg.SMSEnabled(),
+					"instanceName":  s.cfg.InstanceName,
+					"supportEmail":  s.cfg.SupportEmail,
+					"smsEnabled":    s.cfg.SMSEnabled(),
+					"smsSenderName": s.cfg.NotificationSMSSenderName,
 				},
 			})
 		})

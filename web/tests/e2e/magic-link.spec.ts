@@ -115,7 +115,7 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 	await page.goto(invitationsURL);
 	const smithHousehold = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Smith Family' }) });
 	await smithHousehold.getByRole('button', { name: 'Deliver' }).click();
-	await expect(page.getByText('Invitation email was accepted by the configured provider.')).toBeVisible();
+	await expect(page.getByText('Invitation was accepted by the configured delivery provider.')).toBeVisible();
 	const privateMessage = await latestMailFor(request, HOUSEHOLD_EMAIL);
 	const privateBody = `${privateMessage.Text || ''}\n${privateMessage.HTML || ''}`;
 	const privateLink = privateBody.match(/https?:\/\/[^\s"'<>]+\/invitation\/accept#[^\s"'<>]+/)?.[0] || '';

@@ -175,6 +175,7 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 	if err != nil {
 		panic("invalid invitation security configuration: " + err.Error())
 	}
+	invitationService.SetSMSSenderName(cfg.NotificationSMSSenderName)
 	if notifRegistry.Has(notification.ChannelEmail) {
 		invitationService.SetEmailSender(func(ctx context.Context, eventID, invitationID, to, subject, htmlBody, plainBody string) error {
 			if suppressionService.IsSuppressed(ctx, to, eventID) {

@@ -43,6 +43,7 @@ type Config struct {
 	// Notifications
 	NotificationEmailProvider string
 	NotificationSMSProvider   string
+	NotificationSMSSenderName string
 	SMTPHost                  string
 	SMTPPort                  int
 	SMTPUsername              string
@@ -212,6 +213,7 @@ func Load() (*Config, error) {
 
 		NotificationEmailProvider: getEnv("NOTIFICATION_EMAIL_PROVIDER", "smtp"),
 		NotificationSMSProvider:   getEnv("NOTIFICATION_SMS_PROVIDER", ""),
+		NotificationSMSSenderName: getEnv("NOTIFICATION_SMS_SENDER_NAME", "Owl Invites"),
 		SMTPHost:                  getEnv("SMTP_HOST", "localhost"),
 		SMTPPort:                  smtpPort,
 		SMTPUsername:              getEnv("SMTP_USERNAME", ""),

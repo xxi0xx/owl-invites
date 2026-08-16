@@ -101,7 +101,7 @@ func TestContactIsNotIdentityAndInvitationSessionsAreIsolated(t *testing.T) {
 
 func TestSMSPreferredInvitationSendsSMSWithoutEmail(t *testing.T) {
 	f := newServiceFixture(t)
-
+	f.service.SetSMSSenderName("Test Sender via Owl Invites")
 	emailAttempts := 0
 	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error {
 		emailAttempts++
@@ -134,9 +134,13 @@ func TestSMSPreferredInvitationSendsSMSWithoutEmail(t *testing.T) {
 	assert.Equal(t, f.eventID, sentEventID)
 	assert.Equal(t, created.Invitation.ID, sentInvitationID)
 	assert.Equal(t, "+15551234567", sentTo)
-	assert.Contains(t, sentBody, "You're invited to Invitation Test.")
-	assert.Contains(t, sentBody, created.AccessURL)
-	assert.Contains(t, sentBody, "Private household link")
+	assert.Equal(t,
+		fmt.Sprintf(
+			"Test Sender via Owl Invites: You're invited to Invitation Test. View and RSVP: %s\n\nPrivate household link - don't share it.\nMsg frequency varies. Msg & data rates may apply. Reply STOP to opt out; HELP for help.",
+			created.AccessURL,
+		),
+		sentBody,
+	)
 	assert.Equal(t, 0, emailAttempts, "SMS delivery must never fall through to email")
 
 	_, err = f.service.Broadcast(context.Background(), f.eventID, &f.userID, MessageRequest{

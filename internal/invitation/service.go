@@ -27,6 +27,7 @@ type Service struct {
 	recoveryExpiry time.Duration
 	sendEmail      EmailSender
 	sendSMS        SMSSender
+	smsSenderName  string
 }
 
 func NewService(store *Store, secretKey, baseURL string, sessionExpiry, recoveryExpiry time.Duration) (*Service, error) {
@@ -48,7 +49,9 @@ func NewService(store *Store, secretKey, baseURL string, sessionExpiry, recovery
 
 func (s *Service) SetEmailSender(sender EmailSender) { s.sendEmail = sender }
 func (s *Service) SetSMSSender(sender SMSSender)     { s.sendSMS = sender }
-
+func (s *Service) SetSMSSenderName(name string) {
+	s.smsSenderName = strings.TrimSpace(name)
+}
 func (s *Service) CreatePrivate(ctx context.Context, eventID, creatorUserID string, req CreateRequest) (*CreateResult, error) {
 	label := strings.TrimSpace(req.Label)
 	if label == "" {
@@ -154,8 +157,14 @@ func (s *Service) Deliver(ctx context.Context, invitationID string) error {
 	url := s.privateAccessURL(inv)
 
 	if inv.PreferredDeliveryMethod == "sms" {
+		senderName := s.smsSenderName
+		if senderName == "" {
+			senderName = "Owl Invites"
+		}
+
 		body := fmt.Sprintf(
-			"You're invited to %s. View and RSVP: %s\n\nPrivate household link - don't share it.",
+			"%s: You're invited to %s. View and RSVP: %s\n\nPrivate household link - don't share it.\nMsg frequency varies. Msg & data rates may apply. Reply STOP to opt out; HELP for help.",
+			senderName,
 			household.Event.Title,
 			url,
 		)

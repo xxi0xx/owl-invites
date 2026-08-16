@@ -184,6 +184,20 @@ func New(cfg *config.Config, db database.DB, logger zerolog.Logger) *Server {
 				&notification.Message{To: to, Subject: subject, Body: htmlBody, Plain: plainBody})
 		})
 	}
+	if notifRegistry.Has(notification.ChannelSMS) {
+		invitationService.SetSMSSender(func(ctx context.Context, eventID, invitationID, to, body string) error {
+			return notifService.Send(
+				ctx,
+				eventID,
+				invitationID,
+				notification.ChannelSMS,
+				&notification.Message{
+					To:   to,
+					Body: body,
+				},
+			)
+		})
+	}
 	invitationHandler := invitationdomain.NewHandler(invitationService, authMiddleware,
 		invitationdomain.UserFromCtx(organizerFromCtx),
 		invitationdomain.EventAccessChecker(checkEventOwner), cfg.Env == "production", logger)

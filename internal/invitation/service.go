@@ -17,6 +17,8 @@ import (
 
 type EmailSender func(ctx context.Context, eventID, invitationID, to, subject, htmlBody, plainBody string) error
 
+type SMSSender func(ctx context.Context, eventID, invitationID, to, body string) error
+
 type Service struct {
 	store          *Store
 	signer         *CapabilitySigner
@@ -24,6 +26,7 @@ type Service struct {
 	sessionExpiry  time.Duration
 	recoveryExpiry time.Duration
 	sendEmail      EmailSender
+	sendSMS        SMSSender
 }
 
 func NewService(store *Store, secretKey, baseURL string, sessionExpiry, recoveryExpiry time.Duration) (*Service, error) {
@@ -44,6 +47,7 @@ func NewService(store *Store, secretKey, baseURL string, sessionExpiry, recovery
 }
 
 func (s *Service) SetEmailSender(sender EmailSender) { s.sendEmail = sender }
+func (s *Service) SetSMSSender(sender SMSSender)     { s.sendSMS = sender }
 
 func (s *Service) CreatePrivate(ctx context.Context, eventID, creatorUserID string, req CreateRequest) (*CreateResult, error) {
 	label := strings.TrimSpace(req.Label)
@@ -63,8 +67,19 @@ func (s *Service) CreatePrivate(ctx context.Context, eventID, creatorUserID stri
 	if err != nil {
 		return nil, err
 	}
-	if req.Send && (method != "email" || email == nil) {
-		return nil, errcode.Validationf("send requires email delivery and a valid contact email")
+	if req.Send {
+		switch method {
+		case "email":
+			if email == nil {
+				return nil, errcode.Validationf("send requires a valid contact email")
+			}
+		case "sms":
+			if phone == nil {
+				return nil, errcode.Validationf("send requires a valid contact phone")
+			}
+		default:
+			return nil, errcode.Validationf("send requires email or SMS delivery")
+		}
 	}
 	accessID, err := randomToken(18)
 	if err != nil {
@@ -96,7 +111,7 @@ func (s *Service) CreatePrivate(ctx context.Context, eventID, creatorUserID stri
 		Delivery: DeliveryResult{Status: DeliveryNotRequested}}
 	if req.Send {
 		result.Delivery = s.attemptDelivery(ctx, inv.ID,
-			"Invitation created, but email delivery failed. Use the private link or retry delivery.")
+			"Invitation created, but delivery failed. Use the private link or retry delivery.")
 	}
 	return result, nil
 }
@@ -109,17 +124,50 @@ func (s *Service) Deliver(ctx context.Context, invitationID string) error {
 	if inv == nil || inv.RevokedAt != nil {
 		return ErrNotFound
 	}
-	if inv.PreferredDeliveryMethod != "email" || inv.ContactEmail == nil {
-		return errcode.Validationf("email delivery is not available for this invitation")
+
+	switch inv.PreferredDeliveryMethod {
+	case "email":
+		if inv.ContactEmail == nil {
+			return errcode.Validationf("email delivery is not available for this invitation")
+		}
+		if s.sendEmail == nil {
+			return fmt.Errorf("invitation email delivery is not configured")
+		}
+
+	case "sms":
+		if inv.ContactPhone == nil {
+			return errcode.Validationf("SMS delivery is not available for this invitation")
+		}
+		if s.sendSMS == nil {
+			return fmt.Errorf("invitation SMS delivery is not configured")
+		}
+
+	default:
+		return errcode.Validationf("delivery is not available for this invitation")
 	}
-	if s.sendEmail == nil {
-		return fmt.Errorf("invitation email delivery is not configured")
-	}
+
 	household, err := s.store.LoadHousehold(ctx, inv.ID)
 	if err != nil {
 		return err
 	}
+
 	url := s.privateAccessURL(inv)
+
+	if inv.PreferredDeliveryMethod == "sms" {
+		body := fmt.Sprintf(
+			"You're invited to %s. View and RSVP: %s\n\nPrivate household link - don't share it.",
+			household.Event.Title,
+			url,
+		)
+
+		return s.sendSMS(
+			ctx,
+			inv.EventID,
+			inv.ID,
+			*inv.ContactPhone,
+			body,
+		)
+	}
 
 	eventDate := ""
 	if !household.Event.EventDate.IsZero() {

@@ -14,6 +14,8 @@
 	let deliveryWarning = $state('');
 	let label = $state('');
 	let email = $state('');
+	let phone = $state('');
+	let delivery = $state<'email' | 'sms' | 'none'>('email');
 	let names = $state('');
 	let allowance = $state(0);
 	let send = $state(true);
@@ -105,14 +107,24 @@
 		deliveryWarning = '';
 		try {
 			const response = await api.post<{ data: { accessUrl: string; delivery: InvitationDeliveryResult } }>(`/events/${eventId}/invitations`, {
-				label, contactEmail: email, preferredDeliveryMethod: 'email',
+				label,
+				contactEmail: email || undefined,
+				contactPhone: phone || undefined,
+				preferredDeliveryMethod: delivery,
 				additionalGuestAllowance: Number(allowance),
-				assignedGuestNames: names.split('\n').map((name) => name.trim()).filter(Boolean), send
+				assignedGuestNames: names.split('\n').map((name) => name.trim()).filter(Boolean),
+				send: delivery === 'none' ? false : send
 			});
 			lastAccessURL = response.data.accessUrl;
 			deliveryWarning = response.data.delivery.warning ?? '';
-			notice = response.data.delivery.status === 'sent' ? 'Invitation created and accepted by the configured email provider.' : 'Invitation created. Delivery remains a separate outcome.';
-			label = ''; email = ''; names = ''; allowance = 0;
+			notice = response.data.delivery.status === 'sent'
+				? 'Invitation created and accepted by the configured delivery provider.'
+				: 'Invitation created. Delivery remains a separate outcome.';
+			label = '';
+			email = '';
+			phone = '';
+			names = '';
+			allowance = 0;
 			await load();
 		} catch (caught) {
 			error = (caught as ApiError).message ?? 'Unable to create invitation.';
@@ -194,7 +206,7 @@
 				assignedGuests: editAssigned
 			});
 			editingId = '';
-			notice = 'Household definition updated. No email was sent and the private capability was not rotated.';
+			notice = 'Household definition updated. No invitation was sent and the private capability was not rotated.';
 			await load();
 		} catch (caught) {
 			error = (caught as ApiError).message ?? 'Unable to update the household.';
@@ -239,7 +251,7 @@
 		error = '';
 		try {
 			await api.post(`/events/${eventId}/invitations/${invitationId}/deliver`);
-			notice = 'Invitation email was accepted by the configured provider.';
+			notice = 'Invitation was accepted by the configured delivery provider.';
 			await load();
 		} catch (caught) {
 			error = (caught as ApiError).message ?? 'Delivery failed. The invitation remains available and you can retry.';
@@ -254,7 +266,7 @@
 		if (!delivery) return 'No recorded delivery attempt';
 		if (delivery.status === 'failed') return 'Delivery failed';
 		if (delivery.status === 'pending') return 'Delivery pending';
-		if (delivery.deliveryStatus === 'unknown') return 'Accepted by email provider';
+		if (delivery.deliveryStatus === 'unknown') return 'Accepted by provider';
 		return delivery.deliveryStatus.charAt(0).toUpperCase() + delivery.deliveryStatus.slice(1);
 	}
 
@@ -279,10 +291,50 @@
 		<form onsubmit={createInvitation} class="space-y-4 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
 			<h2 class="text-xl font-semibold">Create private invitation</h2>
 			<label class="block space-y-1"><span class="text-sm font-medium">Household label</span><input bind:value={label} required class="block w-full rounded-md border border-neutral-300 px-3 py-2" /></label>
-			<label class="block space-y-1"><span class="text-sm font-medium">Delivery email</span><input type="email" bind:value={email} required class="block w-full rounded-md border border-neutral-300 px-3 py-2" /></label>
+			<div class="grid gap-3 sm:grid-cols-3">
+	<label class="text-sm">
+		<span class="mb-1 block font-medium">Contact email</span>
+		<input
+			type="email"
+			bind:value={email}
+			required={delivery === 'email'}
+			class="w-full rounded-md border border-neutral-300 px-3 py-2"
+		/>
+	</label>
+
+	<label class="text-sm">
+		<span class="mb-1 block font-medium">Contact phone</span>
+		<input
+			type="tel"
+			bind:value={phone}
+			required={delivery === 'sms'}
+			placeholder="+15551234567"
+			class="w-full rounded-md border border-neutral-300 px-3 py-2"
+		/>
+	</label>
+
+	<label class="text-sm">
+		<span class="mb-1 block font-medium">Preferred delivery</span>
+		<select
+			bind:value={delivery}
+			class="w-full rounded-md border border-neutral-300 px-3 py-2"
+		>
+			<option value="email">Email</option>
+			<option value="sms">SMS</option>
+			<option value="none">Manual / none</option>
+		</select>
+	</label>
+</div>
 			<label class="block space-y-1"><span class="text-sm font-medium">Assigned guests (one per line)</span><textarea bind:value={names} required rows="4" class="block w-full rounded-md border border-neutral-300 px-3 py-2"></textarea></label>
 			<label class="block space-y-1"><span class="text-sm font-medium">Additional guest allowance</span><input type="number" min="0" max="50" bind:value={allowance} class="block w-full rounded-md border border-neutral-300 px-3 py-2" /></label>
-			<label class="flex gap-2 text-sm"><input type="checkbox" bind:checked={send} /> Send invitation now</label>
+			<label class="flex gap-2 text-sm">
+	<input
+		type="checkbox"
+		bind:checked={send}
+		disabled={delivery === 'none'}
+	/>
+	Send invitation now
+</label>
 			<Button type="submit" loading={saving}>Create invitation</Button>
 		</form>
 
@@ -328,7 +380,7 @@
 					{#if editingId === household.invitation.id}
 						<form onsubmit={saveEdit} class="mt-5 space-y-4 border-t border-neutral-200 pt-5" aria-label="Edit {household.invitation.label}">
 							<div class="grid gap-3 sm:grid-cols-2"><label class="text-sm"><span class="mb-1 block font-medium">Household label</span><input bind:value={editLabel} required class="w-full rounded-md border border-neutral-300 px-3 py-2" /></label><label class="text-sm"><span class="mb-1 block font-medium">Additional guest allowance</span><input type="number" min="0" max="50" bind:value={editAllowance} class="w-full rounded-md border border-neutral-300 px-3 py-2" /></label></div>
-							<div class="grid gap-3 sm:grid-cols-3"><label class="text-sm"><span class="mb-1 block font-medium">Contact email</span><input type="email" bind:value={editEmail} required={editDelivery === 'email'} class="w-full rounded-md border border-neutral-300 px-3 py-2" /></label><label class="text-sm"><span class="mb-1 block font-medium">Contact phone</span><input type="tel" bind:value={editPhone} required={editDelivery === 'sms'} class="w-full rounded-md border border-neutral-300 px-3 py-2" /></label><label class="text-sm"><span class="mb-1 block font-medium">Preferred delivery</span><select bind:value={editDelivery} class="w-full rounded-md border border-neutral-300 px-3 py-2"><option value="email">Email</option><option value="sms">SMS metadata only</option><option value="none">Manual / none</option></select></label></div>
+							<div class="grid gap-3 sm:grid-cols-3"><label class="text-sm"><span class="mb-1 block font-medium">Contact email</span><input type="email" bind:value={editEmail} required={editDelivery === 'email'} class="w-full rounded-md border border-neutral-300 px-3 py-2" /></label><label class="text-sm"><span class="mb-1 block font-medium">Contact phone</span><input type="tel" bind:value={editPhone} required={editDelivery === 'sms'} class="w-full rounded-md border border-neutral-300 px-3 py-2" /></label><label class="text-sm"><span class="mb-1 block font-medium">Preferred delivery</span><select bind:value={editDelivery} class="w-full rounded-md border border-neutral-300 px-3 py-2"><option value="email">Email</option><option value="sms">SMS</option><option value="none">Manual / none</option></select></label></div>
 							<div><div class="flex items-center justify-between"><h4 class="text-sm font-semibold">Organizer-assigned guests</h4><Button type="button" size="sm" variant="outline" onclick={addAssignedGuest}>Add assigned guest</Button></div><p class="mt-1 text-xs text-neutral-500">Removing an assigned guest hides them but preserves prior response history. Additional guests below remain household-managed.</p>
 								<div class="mt-3 space-y-2">{#each editAssigned as guest, index (guest.id ?? `new-${index}`)}<div class="flex gap-2"><input aria-label="Assigned guest {index + 1} name" value={guest.name} oninput={(event) => renameAssignedGuest(index, event.currentTarget.value)} required class="min-w-0 flex-1 rounded-md border border-neutral-300 px-3 py-2" /><Button type="button" size="sm" variant="ghost" disabled={editAssigned.length <= 1} onclick={() => removeAssignedGuest(index)}>Remove</Button></div>{/each}</div>
 							</div>

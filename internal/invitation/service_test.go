@@ -99,45 +99,114 @@ func TestContactIsNotIdentityAndInvitationSessionsAreIsolated(t *testing.T) {
 	assert.Equal(t, AttendancePending, unchanged.Guests[0].Attendance)
 }
 
-func TestSMSPreferredInvitationCannotSilentlySendEmail(t *testing.T) {
+func TestSMSPreferredInvitationSendsSMSWithoutEmail(t *testing.T) {
 	f := newServiceFixture(t)
-	deliveryAttempts := 0
+
+	emailAttempts := 0
 	f.service.SetEmailSender(func(_ context.Context, _, _, _, _, _, _ string) error {
+		emailAttempts++
+		return nil
+	})
+
+	var sentEventID string
+	var sentInvitationID string
+	var sentTo string
+	var sentBody string
+	f.service.SetSMSSender(func(_ context.Context, eventID, invitationID, to, body string) error {
+		sentEventID = eventID
+		sentInvitationID = invitationID
+		sentTo = to
+		sentBody = body
+		return nil
+	})
+
+	created, err := f.service.CreatePrivate(context.Background(), f.eventID, f.userID, CreateRequest{
+		Label:                   "SMS household",
+		ContactEmail:            ptr("metadata@example.com"),
+		ContactPhone:            ptr("+15551234567"),
+		PreferredDeliveryMethod: "sms",
+		AssignedGuestNames:      []string{"Guest"},
+		Send:                    true,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, DeliverySent, created.Delivery.Status)
+	assert.Equal(t, f.eventID, sentEventID)
+	assert.Equal(t, created.Invitation.ID, sentInvitationID)
+	assert.Equal(t, "+15551234567", sentTo)
+	assert.Contains(t, sentBody, "You're invited to Invitation Test.")
+	assert.Contains(t, sentBody, created.AccessURL)
+	assert.Contains(t, sentBody, "Private household link")
+	assert.Equal(t, 0, emailAttempts, "SMS delivery must never fall through to email")
+
+	_, err = f.service.Broadcast(context.Background(), f.eventID, &f.userID, MessageRequest{
+		RecipientGroup: "all",
+		Subject:        "Update",
+		Body:           "Household update",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 0, emailAttempts, "email-only broadcast must skip SMS households")
+
+	require.NoError(t, f.service.RequestRecovery(
+		context.Background(),
+		f.eventID,
+		"metadata@example.com",
+		"192.0.2.30",
+	))
+	assert.Equal(t, 0, emailAttempts, "email recovery must not send to an SMS-preferred household")
+}
+
+func TestSMSDeliveryFailureDoesNotRollBackInvitation(t *testing.T) {
+	f := newServiceFixture(t)
+
+	deliveryAttempts := 0
+	f.service.SetSMSSender(func(_ context.Context, _, _, _, _ string) error {
+		deliveryAttempts++
+		return errors.New("SMS provider unavailable")
+	})
+
+	created, err := f.service.CreatePrivate(context.Background(), f.eventID, f.userID, CreateRequest{
+		Label:                   "SMS provider failure",
+		ContactPhone:            ptr("+15551234567"),
+		PreferredDeliveryMethod: "sms",
+		AssignedGuestNames:      []string{"Guest"},
+		Send:                    true,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, deliveryAttempts)
+	assert.Equal(t, DeliveryFailed, created.Delivery.Status)
+	assert.Contains(t, created.Delivery.Warning, "delivery failed")
+	require.Error(t, created.Delivery.err)
+
+	items, err := f.store.ListByEvent(context.Background(), f.eventID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, created.Invitation.ID, items[0].Invitation.ID,
+		"post-commit SMS delivery failure must not roll back the invitation")
+}
+
+func TestManualDeliveryRemainsAvailableForSMSInvitation(t *testing.T) {
+	f := newServiceFixture(t)
+
+	deliveryAttempts := 0
+	f.service.SetSMSSender(func(_ context.Context, _, _, _, _ string) error {
 		deliveryAttempts++
 		return nil
 	})
 
-	_, err := f.service.CreatePrivate(context.Background(), f.eventID, f.userID, CreateRequest{
-		Label: "Unsupported immediate SMS", ContactEmail: ptr("metadata@example.com"),
-		ContactPhone: ptr("+15551234567"), PreferredDeliveryMethod: "sms",
-		AssignedGuestNames: []string{"Guest"}, Send: true,
-	})
-	require.Error(t, err)
-	assert.True(t, errcode.IsValidation(err))
-	items, listErr := f.store.ListByEvent(context.Background(), f.eventID)
-	require.NoError(t, listErr)
-	assert.Empty(t, items, "unsupported send requests must fail before resource creation")
-
 	created, err := f.service.CreatePrivate(context.Background(), f.eventID, f.userID, CreateRequest{
-		Label: "Manual SMS metadata", ContactEmail: ptr("metadata@example.com"),
-		ContactPhone: ptr("+15551234567"), PreferredDeliveryMethod: "sms",
-		AssignedGuestNames: []string{"Guest"}, Send: false,
+		Label:                   "Manual SMS resend",
+		ContactPhone:            ptr("+15551234567"),
+		PreferredDeliveryMethod: "sms",
+		AssignedGuestNames:      []string{"Guest"},
+		Send:                    false,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, DeliveryNotRequested, created.Delivery.Status)
-	err = f.service.Deliver(context.Background(), created.Invitation.ID)
-	require.Error(t, err)
-	assert.True(t, errcode.IsValidation(err))
-	assert.Equal(t, 0, deliveryAttempts)
 
-	_, err = f.service.Broadcast(context.Background(), f.eventID, &f.userID, MessageRequest{
-		RecipientGroup: "all", Subject: "Update", Body: "Household update",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, 0, deliveryAttempts)
-	require.NoError(t, f.service.RequestRecovery(context.Background(), f.eventID,
-		"metadata@example.com", "192.0.2.30"))
-	assert.Equal(t, 0, deliveryAttempts)
+	require.NoError(t, f.service.Deliver(context.Background(), created.Invitation.ID))
+	assert.Equal(t, 1, deliveryAttempts)
 }
 
 func TestManualDeliveryRemainsAvailableForEmailInvitation(t *testing.T) {

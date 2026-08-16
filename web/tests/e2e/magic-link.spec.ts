@@ -147,7 +147,7 @@ test('Gate 5 release-candidate household product flow', async ({ browser, page, 
 	await page.getByRole('button', { name: 'Apply' }).click();
 	await expect(page.getByRole('heading', { name: 'Smith Family' })).toBeVisible();
 	await expect(page.getByText('1 results · 3 guests · 2 attending · 0 pending')).toBeVisible();
-	await expect(page.getByText('Accepted by email provider')).toBeVisible();
+	await expect(page.getByText('Accepted by provider')).toBeVisible();
 	await page.getByRole('button', { name: 'Clear' }).click();
 	await expect(page.getByText('4 results · 7 guests · 2 attending · 4 pending')).toBeVisible();
 

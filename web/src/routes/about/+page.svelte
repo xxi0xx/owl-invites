@@ -81,27 +81,27 @@
 				</section>
 
 				<section>
-	<h2 class="text-xl font-semibold text-neutral-900">SMS consent</h2>
-	<p class="mt-3 leading-7">
-		Guests must explicitly consent before an organizer selects SMS as the invitation
-		delivery method. Consent is obtained verbally, such as in person or by phone.
-	</p>
+					<h2 class="text-xl font-semibold text-neutral-900">SMS consent</h2>
+					<p class="mt-3 leading-7">
+						Guests must explicitly consent before an organizer selects SMS as the invitation
+						delivery method. Consent is obtained verbally, such as in person or by phone.
+					</p>
 
-	<div class="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-		<p class="text-sm font-semibold text-neutral-900">Verbal SMS opt-in script</p>
-		<p class="mt-2 leading-7">
-			“Would you like me to send your private event invitation and RSVP link by text
-			from {config.smsSenderName}? Message frequency varies. Message and data rates may
-			apply. You can reply STOP to opt out or HELP for help.”
-		</p>
-	</div>
+					<div class="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+						<p class="text-sm font-semibold text-neutral-900">Verbal SMS opt-in script</p>
+						<p class="mt-2 leading-7">
+							“Would you like me to send your private event invitation and RSVP link by text
+							from {config.smsSenderName}? Message frequency varies. Message and data rates may
+							apply. You can reply STOP to opt out or HELP for help.”
+						</p>
+					</div>
 
-	<p class="mt-4 leading-7">
-		The guest must explicitly answer yes before SMS delivery is selected. If the guest
-		declines, no SMS is sent and another invitation delivery method may be used. SMS
-		participation is optional and is not required to receive or respond to an invitation.
-	</p>
-</section>
+					<p class="mt-4 leading-7">
+						The guest must explicitly answer yes before SMS delivery is selected. If the guest
+						declines, no SMS is sent and another invitation delivery method may be used. SMS
+						participation is optional and is not required to receive or respond to an invitation.
+					</p>
+				</section>
 
 				<section>
 					<h2 class="text-xl font-semibold text-neutral-900">Contact</h2>
